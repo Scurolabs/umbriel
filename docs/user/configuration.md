@@ -176,10 +176,18 @@ removed while residual handles remain, so inspect `gpu-status` and use
 `gpu-acquire` to restore it when the Linux driver remains available.
 
 After returning the Linux driver, `umbriel gpu-acquire 0000:01:00.0` resolves
-the current DRM node by PCI identity and recreates its independent secondary
+the current DRM node by PCI identity and recreates its parented secondary
 backend. Normal output configuration applies to the new outputs. Failed
 reacquisition keeps the target suppressed for an explicit retry. These
 commands do not start a VM, change PCI drivers, or close other applications.
+
+Handoff copy renderers run in private child processes of the compositor.
+NVIDIA retains device handles beyond EGL display teardown, so releasing the
+backend closes its worker as well. DMA-BUF descriptors are passed over a private
+socket and copies complete before scanout. The primary EGL environment should
+select only its own graphics vendor. The worker selects its graphics vendor
+separately. This path uses synchronous whole-buffer copying and requires live
+display and performance validation on the selected GPU pair.
 
 ### Limits
 

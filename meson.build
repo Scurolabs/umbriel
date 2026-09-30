@@ -611,6 +611,7 @@ core_sources = files(
   'src/layout/drop_target.cpp',
   'src/server/wine_color_manager.cpp',
   'src/server/backend_manager.cpp',
+  'src/server/copy_renderer.cpp',
   'src/server/server.cpp',
   'src/server/server_events.cpp',
   'src/server/server_keybinds.cpp',
@@ -724,6 +725,10 @@ umbriel = executable(
 # Unit tests and the harness clients check.sh drives.
 if build_tests
   subdir('tests')
+  if native_drm_policy_supported
+    test('copy-renderer-boundary', find_program('python3'),
+      args: [files('tests/copy_renderer_boundary.py'), umbriel.full_path()], timeout: 15)
+  endif
   alias_target('unit-tests', unit_test_targets)
   alias_target('harness-clients', harness_client_targets)
 endif

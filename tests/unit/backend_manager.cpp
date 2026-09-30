@@ -64,6 +64,7 @@ namespace {
     dev_t auditDevice = 0;
     int auditError = 0;
     bool failStart = false;
+    bool isolatedCopy = false;
     std::vector<std::string> parentedPci;
 
     udev_device& addGpu(unsigned int card, const std::string& pci) {
@@ -341,7 +342,7 @@ int drmIsKMS(int fd) {
   return 1;
 }
 wlr_backend* wlr_drm_backend_create(wlr_session* session, wlr_device* device, wlr_backend* parent) {
-  CHECK(parent == nullptr);
+  CHECK(devices->isolatedCopy == (parent != nullptr));
   if (parent != nullptr) {
     devices->parentedPci.push_back(devices->openedPci.back());
   }
@@ -360,6 +361,14 @@ wlr_backend* wlr_backend_autocreate(wl_event_loop* loop, wlr_session** session) 
   return wlr_multi_backend_create(loop);
 }
 } // extern "C"
+
+namespace umbriel {
+  bool setIsolatedCopyRenderer(bool enabled) {
+    const bool previous = devices->isolatedCopy;
+    devices->isolatedCopy = enabled;
+    return previous;
+  }
+}
 
 UMBRIEL_TEST(excludedGpuRemainsUnopenedAfterNodeReuseAndReattachment) {
   Fixture fixture;
@@ -493,7 +502,8 @@ UMBRIEL_TEST(secondaryReleaseBlocksHotplugAndAcquireUsesFreshPciIdentity) {
   auto& primary = fixture.inventory.addGpu(2, "0000:00:02.0");
   fixture.start({.primaryPciAddress = "0000:00:02.0", .handoffPciAddresses = {"0000:01:00.0"}});
   CHECK_EQ(fixture.inventory.openedPci, (std::vector<std::string>{"0000:00:02.0", "0000:01:00.0"}));
-  CHECK(fixture.inventory.parentedPci.empty());
+  CHECK_EQ(fixture.inventory.parentedPci, (std::vector<std::string>{"0000:01:00.0"}));
+  CHECK(!fixture.inventory.isolatedCopy);
   CHECK(!fixture.manager->releaseGpu("0000:00:02.0"));
   CHECK(!fixture.manager->releaseGpu("/dev/dri/card0"));
   CHECK(fixture.manager->releaseGpu("0000:01:00.0"));
@@ -504,6 +514,7 @@ UMBRIEL_TEST(secondaryReleaseBlocksHotplugAndAcquireUsesFreshPciIdentity) {
   CHECK_EQ(fixture.inventory.openedPci.size(), size_t{2});
   secondary.present = false;
   CHECK(!fixture.manager->acquireGpu("0000:01:00.0"));
+  CHECK(!fixture.inventory.isolatedCopy);
   CHECK(fixture.manager->gpuStatus()["targets"][0]["released"].get<bool>());
   fixture.inventory.renumber(secondary, 7);
   fixture.add(secondary);
@@ -511,7 +522,7 @@ UMBRIEL_TEST(secondaryReleaseBlocksHotplugAndAcquireUsesFreshPciIdentity) {
   CHECK(fixture.manager->acquireGpu("0000:01:00.0"));
   CHECK(fixture.manager->acquireGpu("0000:01:00.0"));
   CHECK_EQ(fixture.inventory.openedPci.size(), size_t{3});
-  CHECK(fixture.inventory.parentedPci.empty());
+  CHECK_EQ(fixture.inventory.parentedPci.size(), size_t{2});
   CHECK(!fixture.manager->gpuStatus()["targets"][0]["released"].get<bool>());
   CHECK(fixture.manager->gpuStatus()["targets"][0]["active"].get<bool>());
   CHECK(fixture.verifyOpenDevice(primary.device));

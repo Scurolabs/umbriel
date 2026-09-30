@@ -2,6 +2,7 @@
 
 #include "core/log.h"
 #include "server/drm_policy.h"
+#include "server/copy_renderer.h"
 #include "wlr.h"
 
 #include <algorithm>
@@ -740,9 +741,12 @@ namespace umbriel {
       }
 
       const bool primary = m_primary == nullptr;
-      // Independent scanout backends use buffers from the primary renderer.
-      // A secondary EGL renderer can retain NVIDIA handles after teardown.
-      wlr_backend* drm = wlr_drm_backend_create(m_session, device, nullptr);
+      // Isolate secondary graphics contexts so their driver caches close with
+      // the worker when this backend is released.
+      wlr_backend* parent = m_config.handoffPciAddresses.empty() ? nullptr : m_primary;
+      const bool previous = setIsolatedCopyRenderer(parent != nullptr);
+      wlr_backend* drm = wlr_drm_backend_create(m_session, device, parent);
+      setIsolatedCopyRenderer(previous);
       if (drm == nullptr) {
         closeDeviceIfOwned(device);
         kLog.warn("failed to create a DRM backend for {}", identity->node);

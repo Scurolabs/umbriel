@@ -11,6 +11,7 @@
 #include "server/ipc.h"
 #include "server/ipc_commands.h"
 #include "server/server.h"
+#include "server/copy_renderer.h"
 
 #include <algorithm>
 #include <csignal>
@@ -158,6 +159,9 @@ const char* malloc_conf = "background_thread:true,narenas:2,dirty_decay_ms:1000,
 #endif
 
 int main(int argc, char** argv) {
+  if (argc == 2 && std::strcmp(argv[1], "--internal-copy-renderer") == 0) {
+    return umbriel::copyRendererWorker();
+  }
 #if defined(__GLIBC__) && !defined(UMBRIEL_USE_JEMALLOC)
   // glibc fallback when jemalloc is unavailable: a bounded arena count keeps a
   // long-running compositor from fragmenting across per-thread arenas.
