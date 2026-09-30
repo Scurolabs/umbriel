@@ -39,6 +39,21 @@ that teardown closes all secondary GPU handles. Run it only while Linux owns
 both GPUs, under the workstation's offload lock. The container cannot run
 this hardware test because it has no GPU access.
 
+Optional `WIDTH HEIGHT COPIES` arguments select a longer stress run, with
+three rotating Intel source and NVIDIA target buffers. Stress mode uses AR24
+targets and periodically replaces sources to exercise cache eviction and
+descriptor reuse. For this workstation, run through the protected offload lock
+while keeping the probe's parent renderer on Mesa:
+
+```sh
+rtx-offload env __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json \
+  /absolute/path/to/copy-renderer-gpu-probe /dev/dri/renderD128 /dev/dri/renderD129 \
+  2560 1440 30000
+```
+
+Verify render-node PCI identities before using those example paths. A passing
+probe does not establish live desktop stability or a complete VM round trip.
+
 When the host baseline changes, update the exact dependency pins and key hash
 in `Dockerfile`, then use `--package-version <stock-version> --rebuild-image`.
 Do not treat an older image as compatible with a new wlroots ABI.
