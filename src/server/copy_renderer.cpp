@@ -208,12 +208,19 @@ namespace {
       for (int i = 0; i < request.destination.n_planes; ++i) { fds.push_back(request.destination.fd[i]); }
       uint32_t reply{};
       std::vector<int> received;
-      success = sendPacket(pass->renderer->socket, &request, sizeof(request), fds)
+      const bool connected = sendPacket(pass->renderer->socket, &request, sizeof(request), fds)
           && receivePacket(pass->renderer->socket, &reply, sizeof(reply), received)
-          && received.empty() && reply == 1;
+          && received.empty() && reply <= 1;
+      if (!connected) {
+        pass->renderer->fault = true;
+        shutdown(pass->renderer->socket, SHUT_RDWR);
+        kLog.error("copy renderer connection failed, release and reacquire the secondary GPU to recover");
+      } else if (reply == 0) {
+        kLog.warn("copy renderer rejected one frame, allowing the next frame to retry");
+      }
+      success = connected && reply == 1;
       closeFds(received);
     }
-    if (!success) { pass->renderer->fault = true; }
     if (pass->source) { wlr_buffer_unlock(pass->source); }
     wlr_buffer_unlock(pass->destination);
     delete pass;
@@ -229,6 +236,7 @@ namespace {
         || (options->dst_box.height && options->dst_box.height != pass->destination->height)
         || options->blend_mode != WLR_RENDER_BLEND_MODE_NONE || options->primaries || options->luminance_multiplier) {
       pass->valid = false;
+      kLog.warn("secondary copy requires an untransformed whole-buffer blit");
       return;
     }
     if (options->wait_timeline) {
@@ -236,7 +244,11 @@ namespace {
       pollfd ready{fence, POLLIN, 0};
       const bool signalled = fence >= 0 && poll(&ready, 1, kTimeoutMs) == 1 && (ready.revents & POLLIN);
       if (fence >= 0) { close(fence); }
-      if (!signalled) { pass->valid = false; return; }
+      if (!signalled) {
+        pass->valid = false;
+        kLog.warn("source timeline is not ready for this copy frame");
+        return;
+      }
     }
     pass->source = wlr_buffer_lock(reinterpret_cast<RemoteTexture*>(options->texture)->buffer);
   }
@@ -331,11 +343,14 @@ namespace {
     // every producer write before importing the source into its copy renderer.
     for (int i = 0; i < attributes.n_planes; ++i) {
       dma_buf_export_sync_file fence{.flags = DMA_BUF_SYNC_READ, .fd = -1};
-      if (ioctl(attributes.fd[i], DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &fence) != 0) { return false; }
+      if (ioctl(attributes.fd[i], DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &fence) != 0) {
+        kLog.warn("cannot export the source producer fence: {}", std::strerror(errno));
+        return false;
+      }
       pollfd ready{fence.fd, POLLIN, 0};
       const bool signalled = poll(&ready, 1, kTimeoutMs) == 1 && (ready.revents & POLLIN);
       close(fence.fd);
-      if (!signalled) { return false; }
+      if (!signalled) { kLog.warn("source producer fence did not signal for this copy frame"); return false; }
     }
     return true;
   }
@@ -398,6 +413,7 @@ namespace umbriel {
       auto* source = importBuffer(request.source, fds, 0);
       auto* destination = importBuffer(request.destination, fds, request.source.n_planes);
       auto* texture = waitForWriters(source->attributes) ? wlr_texture_from_buffer(renderer, &source->base) : nullptr;
+      if (!texture) { kLog.warn("source buffer could not be imported for this copy frame"); }
       bool copied = false;
       if (texture) {
         auto* pass = wlr_renderer_begin_buffer_pass(renderer, &destination->base, nullptr);
@@ -409,7 +425,9 @@ namespace umbriel {
           if (copied && wlr_egl_make_current(egl, nullptr)) {
             // Complete the copy before scanout and buffer reuse in the parent.
             glFinish();
-            copied = glGetError() == GL_NO_ERROR;
+            const GLenum error = glGetError();
+            copied = error == GL_NO_ERROR;
+            if (!copied) { kLog.warn("copy completion reported GL error {}", error); }
           }
           else { copied = false; }
         }

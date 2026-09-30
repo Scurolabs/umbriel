@@ -31,6 +31,13 @@ allowing a newer upstream package to supersede it. No packages are installed
 and no session is restarted by this command. Live GPU handoff still requires
 separate guarded hardware testing.
 
+The output also includes `copy-renderer-gpu-probe`, an opt-in hardware test.
+It takes the Intel and secondary GPU render-node paths as arguments, copies
+an Intel-rendered buffer after deliberately rejecting one frame, and checks
+that teardown closes all secondary GPU handles. Run it only while Linux owns
+both GPUs, under the workstation's offload lock. The container cannot run
+this hardware test because it has no GPU access.
+
 When the host baseline changes, update the exact dependency pins and key hash
 in `Dockerfile`, then use `--package-version <stock-version> --rebuild-image`.
 Do not treat an older image as compatible with a new wlroots ABI.

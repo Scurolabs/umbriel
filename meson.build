@@ -726,6 +726,8 @@ umbriel = executable(
 if build_tests
   subdir('tests')
   if native_drm_policy_supported
+    executable('copy-renderer-gpu-probe', 'tests/copy_renderer_gpu_probe.cpp',
+      dependencies: umbriel_core_dep, install: false)
     test('copy-renderer-boundary', find_program('python3'),
       args: [files('tests/copy_renderer_boundary.py'), umbriel.full_path()], timeout: 15)
   endif

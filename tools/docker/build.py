@@ -41,6 +41,8 @@ def main():
             raise RuntimeError('Build produced no package artifacts')
         for artifact in artifacts:
             shutil.copy2(artifact, output / artifact.name)
+        for probe in source.glob('obj-*/copy-renderer-gpu-probe'):
+            shutil.copy2(probe, output / probe.name)
         for stock in Path('/opt/stock').glob('*.deb'):
             shutil.copy2(stock, output / stock.name)
         shutil.copy2('/opt/build-packages.txt', output / 'build-packages.txt')
