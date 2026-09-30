@@ -2990,6 +2990,25 @@ UMBRIEL_TEST(emptyDrmTableKeepsTheCompatibilityPath) {
   CHECK(!store.config().drm.configured());
 }
 
+UMBRIEL_TEST(drmHandoffRequiresAnIndependentPrimaryAndRejectsExclusions) {
+  const TempConfig file;
+  ConfigStore& store = umbriel::configStore();
+  store.setRootPath(file.path(), true);
+  file.write("[drm]\nprimary_pci_address = \"0000:00:02.0\"\nhandoff_pci_addresses = [\"0000:AB:00.0\"]\n");
+  CHECK(store.reload().success);
+  CHECK_EQ(store.config().drm.primaryPciAddress, "0000:00:02.0");
+  CHECK_EQ(store.config().drm.handoffPciAddresses, (std::vector<std::string>{"0000:ab:00.0"}));
+  for (const std::string& invalid : {
+      "handoff_pci_addresses = [\"0000:01:00.0\"]\n",
+      "primary_pci_address = \"invalid\"\nhandoff_pci_addresses = [\"0000:01:00.0\"]\n",
+      "primary_pci_address = \"0000:00:02.0\"\nhandoff_pci_addresses = [\"0000:00:02.0\"]\n",
+      "primary_pci_address = \"0000:00:02.0\"\nhandoff_pci_addresses = [\"0000:01:00.0\"]\nignored_pci_addresses = [\"0000:03:00.0\"]\n"
+  }) {
+    file.write("[drm]\n" + invalid);
+    CHECK(!store.reload().success);
+  }
+}
+
 UMBRIEL_TEST(drmPathsPreserveSymlinkSensitiveComponents) {
   const TempConfig file;
   file.write(R"(

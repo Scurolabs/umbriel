@@ -145,9 +145,41 @@ ignored_pci_addresses = ["0000:01:00.0"]
 | --- | --- | --- | --- |
 | `ignored_devices` | string array | `[]` | Absolute card or render-node paths. Prefer stable `/dev/dri/by-path` links. |
 | `ignored_pci_addresses` | string array | `[]` | PCI addresses in `domain:bus:slot.function` form. |
+| `primary_pci_address` | string | `""` | Pin the native primary backend and scene renderer to this PCI GPU. Fail startup if unavailable. |
+| `handoff_pci_addresses` | string array | `[]` | Allow explicit release and reacquisition of these secondary GPUs. Requires a fixed primary and cannot coexist with exclusions. |
 
 Umbriel does not bind or unbind PCI drivers. Configure that lifecycle in
 libvirt or equivalent host tooling.
+
+### Secondary GPU handoff
+
+For a desktop whose scene renderer stays on an integrated GPU while a discrete
+GPU scans out additional monitors:
+
+```toml
+[drm]
+primary_pci_address = "0000:00:02.0"
+handoff_pci_addresses = ["0000:01:00.0"]
+```
+
+`umbriel gpu-status --json` reports protocol version 1, capability, the primary
+PCI address, and each target's `active` and `released` state.
+`umbriel gpu-release 0000:01:00.0` destroys that secondary backend, including
+its outputs, copy renderer, and session device. Windows on removed outputs
+follow the compositor's normal output-removal behavior. The primary backend
+and renderer remain. Automatic hotplug is suppressed for the released target.
+The operation is idempotent and refuses primary or unconfigured targets.
+
+Host tooling must verify all GPU users, including other applications and the
+seat service, before changing drivers. A failed release can leave the backend
+removed while residual handles remain, so inspect `gpu-status` and use
+`gpu-acquire` to restore it when the Linux driver remains available.
+
+After returning the Linux driver, `umbriel gpu-acquire 0000:01:00.0` resolves
+the current DRM node by PCI identity and recreates its parented secondary
+backend. Normal output configuration applies to the new outputs. Failed
+reacquisition keeps the target suppressed for an explicit retry. These
+commands do not start a VM, change PCI drivers, or close other applications.
 
 ### Limits
 

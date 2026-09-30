@@ -2,7 +2,10 @@
 
 #include "config/config.h"
 
+#include <expected>
 #include <memory>
+#include <nlohmann/json_fwd.hpp>
+#include <string>
 #include <string_view>
 
 struct wl_display;
@@ -26,6 +29,9 @@ namespace umbriel {
     [[nodiscard]] wlr_renderer* createRenderer();
     [[nodiscard]] bool verifyOpenDevices(std::string_view context);
     void markStarted();
+    [[nodiscard]] nlohmann::json gpuStatus() const;
+    [[nodiscard]] std::expected<void, std::string> releaseGpu(std::string_view pciAddress);
+    [[nodiscard]] std::expected<void, std::string> acquireGpu(std::string_view pciAddress);
 
   private:
     class Impl;

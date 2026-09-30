@@ -5,6 +5,7 @@
 #include "output/output.h"
 #include "scene/effect_registry.h"
 #include "scene/effect_selection.h"
+#include "server/backend_manager.h"
 #include "server/server.h"
 #include "view/view.h"
 #include "wlr.h"
@@ -773,6 +774,26 @@ namespace umbriel {
     return nlohmann::json{{"ok", nullptr}};
   }
 
+  nlohmann::json IpcCommands::gpuStatus(Server& server, std::string_view /*arg*/) {
+    return {{"ok", server.backendManager()->gpuStatus()}};
+  }
+
+  nlohmann::json IpcCommands::gpuRelease(Server& server, std::string_view arg) {
+    const auto result = server.backendManager()->releaseGpu(arg);
+    if (!result) {
+      return {{"err", result.error()}};
+    }
+    return {{"ok", server.backendManager()->gpuStatus()}};
+  }
+
+  nlohmann::json IpcCommands::gpuAcquire(Server& server, std::string_view arg) {
+    const auto result = server.backendManager()->acquireGpu(arg);
+    if (!result) {
+      return {{"err", result.error()}};
+    }
+    return {{"ok", server.backendManager()->gpuStatus()}};
+  }
+
   nlohmann::json IpcCommands::settle(Server& /*server*/, std::string_view /*arg*/) {
     return nlohmann::json{{"ok", nullptr}};
   }
@@ -848,6 +869,12 @@ namespace umbriel {
   }
 
   static constexpr IpcCommandSpec kIpcCommands[] = {
+      {"gpu-status", "", "inspect secondary GPU handoff capability and state", IpcCommandGroup::Inspect, false,
+       &IpcCommands::gpuStatus, nullptr},
+      {"gpu-release", "<pci-address>", "release a configured secondary GPU until explicitly reacquired",
+       IpcCommandGroup::Control, true, &IpcCommands::gpuRelease, nullptr, 15},
+      {"gpu-acquire", "<pci-address>", "recreate a released secondary GPU after its Linux driver returns",
+       IpcCommandGroup::Control, true, &IpcCommands::gpuAcquire, nullptr, 15},
       {"msg", "<action> [args...]", "send an action to the compositor", IpcCommandGroup::Control, true,
        &IpcCommands::msg, nullptr},
       {"output-create", "<name> [mode]", "create a virtual output (optional mode, as 1920x1080@60)",

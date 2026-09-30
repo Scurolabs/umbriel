@@ -4,14 +4,15 @@
 #include "server/drm_policy.h"
 #include "wlr.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string_view>
 #include <utility>
 
 #if UMBRIEL_HAS_NATIVE_DRM_POLICY
-#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -246,6 +247,14 @@ namespace umbriel {
         return m_backend != nullptr;
       }
 
+      if (!m_config.handoffPciAddresses.empty()
+          && (m_config.primaryPciAddress.empty() || !m_config.ignoredDevices.empty()
+              || !m_config.ignoredPciAddresses.empty()
+              || std::ranges::contains(m_config.handoffPciAddresses, m_config.primaryPciAddress))) {
+        kLog.error("GPU handoff requires a fixed primary GPU and separate targets without exclusions");
+        return false;
+      }
+
 #if UMBRIEL_HAS_NATIVE_DRM_POLICY
       if (!environment.exclusionsSupported) {
         kLog.error(
@@ -323,6 +332,81 @@ namespace umbriel {
 #endif
     }
 
+    [[nodiscard]] nlohmann::json gpuStatus() const {
+      nlohmann::json targets = nlohmann::json::array();
+      bool supported = false;
+#if UMBRIEL_HAS_NATIVE_DRM_POLICY
+      if (m_policyActive) {
+        supported = !m_config.handoffPciAddresses.empty();
+        for (const auto& address : m_config.handoffPciAddresses) {
+          targets.push_back({{"pci_address", address}, {"active", activeGpu(address) != nullptr},
+                             {"released", std::ranges::contains(m_releasedPciAddresses, address)}});
+        }
+      }
+#endif
+      return {{"protocol", 1}, {"supported", supported},
+              {"primary_pci_address", m_config.primaryPciAddress}, {"targets", targets}};
+    }
+
+    [[nodiscard]] std::expected<void, std::string> releaseGpu(std::string_view address) {
+#if UMBRIEL_HAS_NATIVE_DRM_POLICY
+      if (!m_policyActive || !m_started || m_primary == nullptr || m_session == nullptr || !m_session->active
+          || !std::ranges::contains(m_config.handoffPciAddresses, address)
+          || address == m_config.primaryPciAddress) {
+        return std::unexpected("GPU release requires an active native session and a configured secondary target");
+      }
+      DrmBackendRecord* record = activeGpu(address);
+      if (record != nullptr && record->backend == m_primary) {
+        return std::unexpected("the primary GPU cannot be released");
+      }
+      if (!std::ranges::contains(m_releasedPciAddresses, address)) {
+        m_releasedPciAddresses.emplace_back(address);
+      }
+      if (record != nullptr) {
+        wlr_backend* backend = record->backend;
+        wlr_multi_backend_remove(m_backend, backend);
+        wlr_backend_destroy(backend);
+      }
+      if (!verifyNoExcludedDeviceIsOpen("after GPU release")) {
+        return std::unexpected("GPU backend was released but device handles remain open");
+      }
+      return {};
+#else
+      return std::unexpected("GPU handoff is unavailable in this build");
+#endif
+    }
+
+    [[nodiscard]] std::expected<void, std::string> acquireGpu(std::string_view address) {
+#if UMBRIEL_HAS_NATIVE_DRM_POLICY
+      if (!m_policyActive || !m_started || m_primary == nullptr || m_session == nullptr || !m_session->active
+          || !std::ranges::contains(m_config.handoffPciAddresses, address)) {
+        return std::unexpected("GPU acquire requires an active native session and a configured secondary target");
+      }
+      if (activeGpu(address) != nullptr) {
+        return {};
+      }
+      auto candidates = enumerateDrmCards();
+      if (!candidates) {
+        return std::unexpected("cannot enumerate DRM cards for GPU acquire");
+      }
+      const auto candidate = std::ranges::find_if(*candidates, [&](const auto& card) {
+        return card.pciAddress == address;
+      });
+      if (candidate == candidates->end()) {
+        return std::unexpected("GPU has no DRM card, return its Linux driver before acquiring it");
+      }
+      std::erase(m_releasedPciAddresses, std::string(address));
+      openCandidate(*candidate);
+      if (activeGpu(address) == nullptr) {
+        m_releasedPciAddresses.emplace_back(address);
+        return std::unexpected("failed to recreate the secondary GPU backend");
+      }
+      return {};
+#else
+      return std::unexpected("GPU handoff is unavailable in this build");
+#endif
+    }
+
   private:
     wl_display* m_display = nullptr;
     Config::Drm m_config;
@@ -337,6 +421,19 @@ namespace umbriel {
       DrmDeviceIdentity identity;
       wl_listener destroy{};
     };
+
+    [[nodiscard]] DrmBackendRecord* activeGpu(std::string_view address) const {
+      const auto record = std::ranges::find_if(m_drmBackends, [&](const auto& entry) {
+        return entry->identity.pciAddress == address;
+      });
+      return record == m_drmBackends.end() ? nullptr : record->get();
+    }
+
+    [[nodiscard]] std::vector<std::string> excludedPciAddresses() const {
+      auto addresses = m_config.ignoredPciAddresses;
+      addresses.insert(addresses.end(), m_releasedPciAddresses.begin(), m_releasedPciAddresses.end());
+      return addresses;
+    }
 
     [[nodiscard]] bool initializeFiltered(const DrmBackendEnvironment& environment) {
       logEnvironmentPrecedence();
@@ -377,6 +474,25 @@ namespace umbriel {
         candidates = enumerateDrmCards();
         if (!candidates) {
           return false;
+        }
+      }
+
+      if (!m_config.primaryPciAddress.empty()) {
+        const auto primary = std::ranges::find_if(*candidates, [&](const auto& card) {
+          return card.pciAddress == m_config.primaryPciAddress;
+        });
+        if (primary == candidates->end()) {
+          kLog.error("configured primary GPU {} is unavailable", m_config.primaryPciAddress);
+          return false;
+        }
+        openCandidate(*primary);
+        if (m_primary == nullptr) {
+          return false;
+        }
+        for (const auto& candidate : *candidates) {
+          if (candidate.pciAddress != m_config.primaryPciAddress) {
+            openCandidate(candidate);
+          }
         }
       }
       if (candidates->empty()) {
@@ -573,6 +689,9 @@ namespace umbriel {
     }
 
     void openCandidate(const DrmDeviceIdentity& candidate) {
+      if (candidate.pciAddress && std::ranges::contains(m_releasedPciAddresses, *candidate.pciAddress)) {
+        return;
+      }
       struct stat preOpenStat{};
       if (stat(candidate.node.c_str(), &preOpenStat) != 0 || !S_ISCHR(preOpenStat.st_mode)) {
         kLog.warn("allowed DRM card {} disappeared before open", candidate.node);
@@ -588,7 +707,7 @@ namespace umbriel {
         return;
       }
       const DrmExclusionMatch preOpenMatch =
-          drmExclusionMatch(*identity, m_ignoredDevices, m_config.ignoredPciAddresses);
+          drmExclusionMatch(*identity, m_ignoredDevices, excludedPciAddresses());
       if (preOpenMatch != DrmExclusionMatch::None) {
         kLog.info(
             "excluding {} at the final pre-open check (matched {})", candidate.node, exclusionMatchName(preOpenMatch)
@@ -608,7 +727,7 @@ namespace umbriel {
       }
       auto openedIdentity = identityFromDevnum(m_session->udev, device->dev, identity->node);
       if (!openedIdentity
-          || drmExclusionMatch(*openedIdentity, m_ignoredDevices, m_config.ignoredPciAddresses)
+          || drmExclusionMatch(*openedIdentity, m_ignoredDevices, excludedPciAddresses())
               != DrmExclusionMatch::None) {
         kLog.error("DRM card {} became excluded while opening; closing it without creating a backend", identity->node);
         wlr_session_close_file(m_session, device);
@@ -621,10 +740,10 @@ namespace umbriel {
       }
 
       const bool primary = m_primary == nullptr;
-      // A parent makes wlroots create an internal multi-GPU renderer through
-      // EGL device enumeration. Independent backends keep exclusions strict;
-      // secondary outputs import the compositor's DMA-BUFs directly instead.
-      wlr_backend* drm = wlr_drm_backend_create(m_session, device, nullptr);
+      // Exclusions require independent backends to avoid EGL enumeration of
+      // forbidden GPUs. Handoff uses parented copying on allowed secondary GPUs.
+      wlr_backend* parent = m_config.handoffPciAddresses.empty() ? nullptr : m_primary;
+      wlr_backend* drm = wlr_drm_backend_create(m_session, device, parent);
       if (drm == nullptr) {
         closeDeviceIfOwned(device);
         kLog.warn("failed to create a DRM backend for {}", identity->node);
@@ -684,7 +803,7 @@ namespace umbriel {
         return;
       }
 
-      const DrmExclusionMatch match = drmExclusionMatch(*identity, m_ignoredDevices, m_config.ignoredPciAddresses);
+      const DrmExclusionMatch match = drmExclusionMatch(*identity, m_ignoredDevices, excludedPciAddresses());
       if (match != DrmExclusionMatch::None) {
         kLog.info("keeping reattached DRM card {} excluded (matched {})", path, exclusionMatchName(match));
         return;
@@ -733,6 +852,7 @@ namespace umbriel {
       }
 
       std::optional<std::vector<std::pair<dev_t, std::string>>> nvidiaPciByDevice;
+      const auto excludedPci = excludedPciAddresses();
       const std::filesystem::directory_iterator end;
       while (descriptor != end) {
         struct stat statBuffer{};
@@ -778,7 +898,7 @@ namespace umbriel {
             }
             identity.pciAddress = nvidia->second;
           }
-          const DrmExclusionMatch match = drmExclusionMatch(identity, m_ignoredDevices, m_config.ignoredPciAddresses);
+          const DrmExclusionMatch match = drmExclusionMatch(identity, m_ignoredDevices, excludedPci);
           if (match != DrmExclusionMatch::None) {
             kLog.error("excluded device {} is open {} (matched {})", identity.node, context, exclusionMatchName(match));
             return false;
@@ -876,6 +996,7 @@ namespace umbriel {
     std::vector<DrmDeviceIdentity> m_ignoredDevices;
     std::vector<std::unique_ptr<DrmBackendRecord>> m_drmBackends;
     std::vector<std::string> m_pendingDrmCards;
+    std::vector<std::string> m_releasedPciAddresses;
     wl_listener m_sessionAdd{};
     wl_listener m_sessionDestroy{};
 #endif
@@ -900,5 +1021,12 @@ namespace umbriel {
   wlr_renderer* BackendManager::createRenderer() { return m_impl->createRenderer(); }
   bool BackendManager::verifyOpenDevices(std::string_view context) { return m_impl->verifyOpenDevices(context); }
   void BackendManager::markStarted() { m_impl->markStarted(); }
+  nlohmann::json BackendManager::gpuStatus() const { return m_impl->gpuStatus(); }
+  std::expected<void, std::string> BackendManager::releaseGpu(std::string_view address) {
+    return m_impl->releaseGpu(address);
+  }
+  std::expected<void, std::string> BackendManager::acquireGpu(std::string_view address) {
+    return m_impl->acquireGpu(address);
+  }
 
 } // namespace umbriel

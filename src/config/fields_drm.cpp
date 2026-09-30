@@ -117,8 +117,25 @@ namespace umbriel {
           readDrmSelectorList(value, "drm.ignored_devices", loaded.drm.ignoredDevices, readDrmPath);
         } else if (key == "ignored_pci_addresses") {
           readDrmSelectorList(value, "drm.ignored_pci_addresses", loaded.drm.ignoredPciAddresses, readDrmPciAddress);
+        } else if (key == "primary_pci_address") {
+          if (auto address = readDrmPciAddress(value, "drm.primary_pci_address")) {
+            loaded.drm.primaryPciAddress = std::move(*address);
+          }
+        } else if (key == "handoff_pci_addresses") {
+          readDrmSelectorList(value, "drm.handoff_pci_addresses", loaded.drm.handoffPciAddresses, readDrmPciAddress);
         } else {
           errorAt(value.source(), "unknown key drm.{}", key.str());
+        }
+      }
+      if (!loaded.drm.handoffPciAddresses.empty()) {
+        if (loaded.drm.primaryPciAddress.empty()) {
+          errorAt(node->source(), "drm.handoff_pci_addresses requires primary_pci_address");
+        }
+        if (!loaded.drm.ignoredDevices.empty() || !loaded.drm.ignoredPciAddresses.empty()) {
+          errorAt(node->source(), "DRM handoff cannot be combined with GPU exclusions");
+        }
+        if (std::ranges::contains(loaded.drm.handoffPciAddresses, loaded.drm.primaryPciAddress)) {
+          errorAt(node->source(), "the primary GPU cannot be a handoff target");
         }
       }
     }
@@ -133,9 +150,13 @@ namespace umbriel {
           registry::Descriptions keys{
               KeyDescription("string_array").withFormat("path"),
               KeyDescription("string_array").withFormat("pci_address"),
+              KeyDescription("string").withFormat("pci_address"),
+              KeyDescription("string_array").withFormat("pci_address"),
           };
           keys[0].path = ".ignored_devices";
           keys[1].path = ".ignored_pci_addresses";
+          keys[2].path = ".primary_pci_address";
+          keys[3].path = ".handoff_pci_addresses";
           return keys;
         }(),
         [](Section& s, Config& c, registry::ReadContext&) { readDrm(s, c); }

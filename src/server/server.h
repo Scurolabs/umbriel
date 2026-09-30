@@ -163,6 +163,7 @@ namespace umbriel {
     // Null when general.xwayland is off or the Xwayland server could not be created.
     [[nodiscard]] Xwayland* xwayland() const { return m_xwayland.get(); }
     [[nodiscard]] wlr_backend* backend() const { return m_backend; }
+    [[nodiscard]] BackendManager* backendManager() const { return m_backendManager.get(); }
     [[nodiscard]] wlr_session* session() const { return m_session; }
     [[nodiscard]] wlr_renderer* renderer() const { return m_renderer; }
     [[nodiscard]] wlr_allocator* allocator() const { return m_allocator; }

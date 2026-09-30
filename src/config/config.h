@@ -822,8 +822,14 @@ namespace umbriel {
       std::vector<std::string> ignoredDevices;
       // Canonical PCI domain:bus:slot.function addresses.
       std::vector<std::string> ignoredPciAddresses;
+      // The scene renderer stays on this GPU throughout secondary GPU handoffs.
+      std::string primaryPciAddress;
+      std::vector<std::string> handoffPciAddresses;
 
-      [[nodiscard]] bool configured() const { return !ignoredDevices.empty() || !ignoredPciAddresses.empty(); }
+      [[nodiscard]] bool configured() const {
+        return !ignoredDevices.empty() || !ignoredPciAddresses.empty()
+            || !primaryPciAddress.empty() || !handoffPciAddresses.empty();
+      }
       bool operator==(const Drm&) const = default;
     } drm;
 
