@@ -740,10 +740,9 @@ namespace umbriel {
       }
 
       const bool primary = m_primary == nullptr;
-      // Exclusions require independent backends to avoid EGL enumeration of
-      // forbidden GPUs. Handoff uses parented copying on allowed secondary GPUs.
-      wlr_backend* parent = m_config.handoffPciAddresses.empty() ? nullptr : m_primary;
-      wlr_backend* drm = wlr_drm_backend_create(m_session, device, parent);
+      // Independent scanout backends use buffers from the primary renderer.
+      // A secondary EGL renderer can retain NVIDIA handles after teardown.
+      wlr_backend* drm = wlr_drm_backend_create(m_session, device, nullptr);
       if (drm == nullptr) {
         closeDeviceIfOwned(device);
         kLog.warn("failed to create a DRM backend for {}", identity->node);

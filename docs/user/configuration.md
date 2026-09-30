@@ -176,7 +176,7 @@ removed while residual handles remain, so inspect `gpu-status` and use
 `gpu-acquire` to restore it when the Linux driver remains available.
 
 After returning the Linux driver, `umbriel gpu-acquire 0000:01:00.0` resolves
-the current DRM node by PCI identity and recreates its parented secondary
+the current DRM node by PCI identity and recreates its independent secondary
 backend. Normal output configuration applies to the new outputs. Failed
 reacquisition keeps the target suppressed for an explicit retry. These
 commands do not start a VM, change PCI drivers, or close other applications.
