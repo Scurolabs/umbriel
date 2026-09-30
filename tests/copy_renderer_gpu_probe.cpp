@@ -20,6 +20,8 @@ extern "C" {
 #include <sys/wait.h>
 #include <csignal>
 #include <cerrno>
+#include <cstdlib>
+#include <array>
 
 struct Buffer {
  wlr_buffer base{};
@@ -37,25 +39,37 @@ void destroy(wlr_buffer* base) {
  delete buffer;
 }
 const wlr_buffer_impl implementation{.destroy = destroy, .get_dmabuf = attributes};
-Buffer* allocate(gbm_device* device, uint64_t modifier) {
- auto* bo = gbm_bo_create_with_modifiers(device, 256, 256, GBM_FORMAT_XRGB8888, &modifier, 1);
+Buffer* allocate(gbm_device* device, uint64_t modifier, int width, int height, uint32_t format) {
+ auto* bo = gbm_bo_create_with_modifiers(device, width, height, format, &modifier, 1);
  if (!bo) return nullptr;
  if (gbm_bo_get_plane_count(bo) != 1) { gbm_bo_destroy(bo); return nullptr; }
  auto* buffer = new Buffer;
  buffer->bo = bo;
- buffer->attributes = {.width=256, .height=256, .format=GBM_FORMAT_XRGB8888,
+ buffer->attributes = {.width=width, .height=height, .format=format,
   .modifier=gbm_bo_get_modifier(bo), .n_planes=1};
  buffer->attributes.fd[0]=gbm_bo_get_fd(bo);
  buffer->attributes.stride[0]=gbm_bo_get_stride(bo);
- wlr_buffer_init(&buffer->base, &implementation, 256, 256);
+ wlr_buffer_init(&buffer->base, &implementation, width, height);
  return buffer;
 }
 int main(int argc, char** argv) {
  if (argc == 2 && strcmp(argv[1], "--internal-copy-renderer") == 0) return umbriel::copyRendererWorker();
- if (argc != 3) {
-  fprintf(stderr, "Usage: %s INTEL_RENDER_NODE SECONDARY_RENDER_NODE\n", argv[0]);
+ if (argc != 3 && argc != 6) {
+  fprintf(stderr, "Usage: %s INTEL_RENDER_NODE SECONDARY_RENDER_NODE [WIDTH HEIGHT COPIES]\n", argv[0]);
   return 64;
  }
+ std::array<int, 3> dimensions{256, 256, 256};
+ if (argc == 6) {
+  for (int i = 0; i < 3; ++i) {
+   char* end{};
+   errno = 0;
+   const long value = strtol(argv[3 + i], &end, 10);
+   const int limit = i == 2 ? 100000 : 8192;
+   if (errno || !end || *end || value < 1 || value > limit) return 64;
+   dimensions[i] = static_cast<int>(value);
+  }
+ }
+ const auto [width, height, copies] = dimensions;
  wlr_log_init(WLR_INFO, nullptr);
  int nvfd = open(argv[2], O_RDWR | O_CLOEXEC);
  int ifd = open(argv[1], O_RDWR | O_CLOEXEC);
@@ -71,17 +85,26 @@ int main(int argc, char** argv) {
  auto* nv = gbm_create_device(nvfd);
  auto* intel = gbm_create_device(ifd);
  if (!nv || !intel) return 3;
- auto* source = allocate(intel, 0);
  const auto* formats = renderer->WLR_PRIVATE.impl->get_render_formats(renderer);
- const auto* format = wlr_drm_format_set_get(formats, GBM_FORMAT_XRGB8888);
- if (!source || !format || !format->len) return 4;
- auto* target = allocate(nv, format->modifiers[0]);
- if (!target) return 5;
- auto* sourcePass = wlr_renderer_begin_buffer_pass(intelRenderer, &source->base, nullptr);
- if (!sourcePass) return 6;
- wlr_render_rect_options rectangle{.box={.width=256, .height=256}, .color={.r=1, .a=1}};
- wlr_render_pass_add_rect(sourcePass, &rectangle);
- if (!wlr_render_pass_submit(sourcePass)) return 10;
+ const uint32_t targetFormat = argc == 6 ? GBM_FORMAT_ARGB8888 : GBM_FORMAT_XRGB8888;
+ const auto* format = wlr_drm_format_set_get(formats, targetFormat);
+ if (!format || !format->len) return 4;
+ const auto drawSource = [&](Buffer* buffer) {
+  auto* pass = wlr_renderer_begin_buffer_pass(intelRenderer, &buffer->base, nullptr);
+  if (!pass) return false;
+  wlr_render_rect_options rectangle{.box={.width=width, .height=height}, .color={.r=1, .a=1}};
+  wlr_render_pass_add_rect(pass, &rectangle);
+  return wlr_render_pass_submit(pass);
+ };
+ std::array<Buffer*, 3> sources{}, targets{};
+ for (size_t i = 0; i < sources.size(); ++i) {
+  sources[i] = allocate(intel, 0, width, height, GBM_FORMAT_XRGB8888);
+  targets[i] = allocate(nv, format->modifiers[0], width, height, targetFormat);
+  if (!sources[i] || !targets[i]) return 5;
+  if (!drawSource(sources[i])) return 10;
+ }
+ auto* source = sources[0];
+ auto* target = targets[0];
  auto* texture = wlr_texture_from_buffer(renderer, &source->base);
  if (!texture) return 7;
  auto* rejectedPass = wlr_renderer_begin_buffer_pass(renderer, &target->base, nullptr);
@@ -105,22 +128,36 @@ int main(int argc, char** argv) {
   _exit(0);
  }
  bool result = true;
- for (int i = 0; result && i < 256; ++i) {
-  auto* pass = wlr_renderer_begin_buffer_pass(renderer, &target->base, nullptr);
+ for (int i = 0; result && i < copies; ++i) {
+  // Repeated imports and rotating buffers reproduce the secondary swapchain.
+  wlr_texture_destroy(texture);
+  texture = nullptr;
+  auto*& currentSource = sources[i % sources.size()];
+  if (argc == 6 && i > 0 && i % 1024 == 0) {
+   // Replaced buffers exercise cache eviction and descriptor reuse as well.
+   wlr_buffer_drop(&currentSource->base);
+   currentSource = allocate(intel, 0, width, height, GBM_FORMAT_XRGB8888);
+   if (!currentSource || !drawSource(currentSource)) { result = false; break; }
+   fprintf(stderr, "Completed %d copies\n", i);
+  }
+  texture = wlr_texture_from_buffer(renderer, &currentSource->base);
+  if (!texture) { result = false; break; }
+  auto* pass = wlr_renderer_begin_buffer_pass(renderer, &targets[i % targets.size()]->base, nullptr);
   if (!pass) { result = false; break; }
   wlr_render_texture_options options{.texture = texture, .blend_mode = WLR_RENDER_BLEND_MODE_NONE};
   wlr_render_pass_add_texture(pass, &options);
   result = wlr_render_pass_submit(pass);
+  if (!result) fprintf(stderr, "Copy failed at iteration %d\n", i);
  }
  int senderStatus{};
  pid_t waited;
  do { waited = waitpid(sender, &senderStatus, 0); } while (waited < 0 && errno == EINTR);
  result = result && waited == sender && WIFEXITED(senderStatus) && WEXITSTATUS(senderStatus) == 0;
  printf("GPU copy result: %d\n", result);
- wlr_texture_destroy(texture);
+ if (texture) wlr_texture_destroy(texture);
  wlr_renderer_destroy(intelRenderer);
- wlr_buffer_drop(&source->base);
- wlr_buffer_drop(&target->base);
+ for (auto* buffer : sources) if (buffer) wlr_buffer_drop(&buffer->base);
+ for (auto* buffer : targets) wlr_buffer_drop(&buffer->base);
  gbm_device_destroy(intel);
  gbm_device_destroy(nv);
  wlr_renderer_destroy(renderer);

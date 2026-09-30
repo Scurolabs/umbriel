@@ -341,6 +341,55 @@ namespace {
     wlr_buffer_init(&buffer->base, &bufferImplementation, attributes.width, attributes.height);
     return buffer;
   }
+
+  class BufferCache {
+    struct Entry {
+      ImportedBuffer* buffer{};
+      std::array<std::pair<dev_t, ino_t>, WLR_DMABUF_MAX_PLANES> identities{};
+    };
+    // Retaining wrappers lets wlroots reuse EGL imports across swapchain frames.
+    // A bounded cache also releases replaced swapchains and their DMA mappings.
+    static constexpr size_t kCapacity = 24;
+    std::vector<Entry> entries;
+
+  public:
+    ~BufferCache() { clear(); }
+    void clear() {
+      for (const auto& entry : entries) { wlr_buffer_drop(&entry.buffer->base); }
+      entries.clear();
+    }
+    ImportedBuffer* get(const wlr_dmabuf_attributes& attributes, const std::vector<int>& fds, size_t offset) {
+      std::array<std::pair<dev_t, ino_t>, WLR_DMABUF_MAX_PLANES> identities{};
+      for (int i = 0; i < attributes.n_planes; ++i) {
+        struct stat identity{};
+        if (fstat(fds[offset + i], &identity) != 0) { return nullptr; }
+        identities[i] = {identity.st_dev, identity.st_ino};
+      }
+      auto found = std::find_if(entries.begin(), entries.end(), [&](const Entry& entry) {
+        const auto& cached = entry.buffer->attributes;
+        if (entry.identities != identities || cached.width != attributes.width || cached.height != attributes.height
+            || cached.format != attributes.format || cached.modifier != attributes.modifier
+            || cached.n_planes != attributes.n_planes) { return false; }
+        for (int i = 0; i < attributes.n_planes; ++i) {
+          if (cached.offset[i] != attributes.offset[i] || cached.stride[i] != attributes.stride[i]) { return false; }
+        }
+        return true;
+      });
+      if (found != entries.end()) {
+        auto* buffer = found->buffer;
+        for (int i = 0; i < attributes.n_planes; ++i) { close(fds[offset + i]); }
+        std::rotate(found, found + 1, entries.end());
+        return buffer;
+      }
+      if (entries.size() == kCapacity) {
+        wlr_buffer_drop(&entries.front().buffer->base);
+        entries.erase(entries.begin());
+      }
+      auto* buffer = importBuffer(attributes, fds, offset);
+      entries.push_back({buffer, identities});
+      return buffer;
+    }
+  };
   bool appendFormats(Reply& reply, const wlr_drm_format_set* set, size_t& count) {
     if (!set) { return false; }
     for (size_t i = 0; i < set->len; ++i) {
@@ -419,6 +468,7 @@ namespace umbriel {
     reply.renderCount = count - reply.textureCount;
     reply.success = success;
     success = sendPacket(kWorkerSocket, &reply, sizeof(reply));
+    BufferCache buffers;
     while (success) {
       fds.clear();
       if (!receivePacket(kWorkerSocket, &request, sizeof(request), fds, -1)) { closeFds(fds); break; }
@@ -429,8 +479,13 @@ namespace umbriel {
         closeFds(fds);
         break;
       }
-      auto* source = importBuffer(request.source, fds, 0);
-      auto* destination = importBuffer(request.destination, fds, request.source.n_planes);
+      auto* source = buffers.get(request.source, fds, 0);
+      if (!source) { closeFds(fds); break; }
+      auto* destination = buffers.get(request.destination, fds, request.source.n_planes);
+      if (!destination) {
+        for (size_t i = request.source.n_planes; i < fds.size(); ++i) { close(fds[i]); }
+        break;
+      }
       auto* texture = waitForWriters(source->attributes) ? wlr_texture_from_buffer(renderer, &source->base) : nullptr;
       if (!texture) { kLog.warn("source buffer could not be imported for this copy frame"); }
       bool copied = false;
@@ -452,11 +507,10 @@ namespace umbriel {
         }
         wlr_texture_destroy(texture);
       }
-      wlr_buffer_drop(&source->base);
-      wlr_buffer_drop(&destination->base);
       const uint32_t acknowledgement = copied;
       success = sendPacket(kWorkerSocket, &acknowledgement, sizeof(acknowledgement));
     }
+    buffers.clear();
     wlr_renderer_destroy(renderer);
     close(drmFd);
     close(kWorkerSocket);
