@@ -19,9 +19,11 @@ extern "C" {
 #include <csignal>
 #include <cstring>
 #include <fcntl.h>
+#include <linux/dma-buf.h>
 #include <poll.h>
 #include <spawn.h>
 #include <sys/prctl.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
@@ -323,6 +325,21 @@ namespace {
     }
     return true;
   }
+
+  bool waitForWriters(const wlr_dmabuf_attributes& attributes) {
+    // NVIDIA does not reliably wait for foreign implicit fences. Complete
+    // every producer write before importing the source into its copy renderer.
+    for (int i = 0; i < attributes.n_planes; ++i) {
+      dma_buf_export_sync_file fence{.flags = DMA_BUF_SYNC_READ, .fd = -1};
+      if (ioctl(attributes.fd[i], DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &fence) != 0) { return false; }
+      pollfd ready{fence.fd, POLLIN, 0};
+      const bool signalled = poll(&ready, 1, kTimeoutMs) == 1 && (ready.revents & POLLIN);
+      close(fence.fd);
+      if (!signalled) { return false; }
+    }
+    return true;
+  }
+
 }
 
 namespace umbriel {
@@ -380,7 +397,7 @@ namespace umbriel {
       }
       auto* source = importBuffer(request.source, fds, 0);
       auto* destination = importBuffer(request.destination, fds, request.source.n_planes);
-      auto* texture = wlr_texture_from_buffer(renderer, &source->base);
+      auto* texture = waitForWriters(source->attributes) ? wlr_texture_from_buffer(renderer, &source->base) : nullptr;
       bool copied = false;
       if (texture) {
         auto* pass = wlr_renderer_begin_buffer_pass(renderer, &destination->base, nullptr);
