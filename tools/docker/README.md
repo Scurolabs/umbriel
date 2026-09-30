@@ -33,7 +33,8 @@ separate guarded hardware testing.
 
 The output also includes `copy-renderer-gpu-probe`, an opt-in hardware test.
 It takes the Intel and secondary GPU render-node paths as arguments, copies
-an Intel-rendered buffer after deliberately rejecting one frame, and checks
+an Intel-rendered buffer after deliberately rejecting one frame, delivers
+signals during repeated copies to exercise interrupted waits, and checks
 that teardown closes all secondary GPU handles. Run it only while Linux owns
 both GPUs, under the workstation's offload lock. The container cannot run
 this hardware test because it has no GPU access.

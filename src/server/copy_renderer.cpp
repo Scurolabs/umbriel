@@ -13,6 +13,7 @@ extern "C" {
 #include <wlr/render/drm_syncobj.h>
 }
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -62,6 +63,20 @@ namespace {
     std::array<Format, kMaxFormats> formats{};
   };
 
+  bool waitReady(int fd, short events, int timeout = kTimeoutMs) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+    for (;;) {
+      const auto remaining = deadline - std::chrono::steady_clock::now();
+      if (timeout >= 0 && remaining <= std::chrono::steady_clock::duration::zero()) { return false; }
+      const int milliseconds = timeout < 0 ? -1
+          : std::max(1, static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count()));
+      pollfd ready{fd, events, 0};
+      const int result = poll(&ready, 1, milliseconds);
+      if (result < 0 && errno == EINTR) { continue; }
+      return result == 1 && (ready.revents & events);
+    }
+  }
+
   bool sendPacket(int socket, const void* data, size_t size, const std::vector<int>& fds = {}) {
     alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int) * kMaxFds)> control{};
     iovec vector{const_cast<void*>(data), size};
@@ -78,14 +93,14 @@ namespace {
       ancillary->cmsg_len = CMSG_LEN(sizeof(int) * fds.size());
       std::memcpy(CMSG_DATA(ancillary), fds.data(), sizeof(int) * fds.size());
     }
-    pollfd ready{socket, POLLOUT, 0};
-    return poll(&ready, 1, kTimeoutMs) == 1
-        && sendmsg(socket, &message, MSG_NOSIGNAL) == static_cast<ssize_t>(size);
+    if (!waitReady(socket, POLLOUT)) { return false; }
+    ssize_t sent;
+    do { sent = sendmsg(socket, &message, MSG_NOSIGNAL | MSG_DONTWAIT); } while (sent < 0 && errno == EINTR);
+    return sent == static_cast<ssize_t>(size);
   }
 
   bool receivePacket(int socket, void* data, size_t size, std::vector<int>& fds, int timeout = kTimeoutMs) {
-    pollfd ready{socket, POLLIN, 0};
-    if (poll(&ready, 1, timeout) != 1) { return false; }
+    if (!waitReady(socket, POLLIN, timeout)) { return false; }
     alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int) * kMaxFds)> control{};
     iovec vector{data, size};
     msghdr message{};
@@ -93,7 +108,8 @@ namespace {
     message.msg_iovlen = 1;
     message.msg_control = control.data();
     message.msg_controllen = control.size();
-    const ssize_t length = recvmsg(socket, &message, MSG_CMSG_CLOEXEC);
+    ssize_t length;
+    do { length = recvmsg(socket, &message, MSG_CMSG_CLOEXEC | MSG_DONTWAIT); } while (length < 0 && errno == EINTR);
     for (auto* ancillary = CMSG_FIRSTHDR(&message); ancillary; ancillary = CMSG_NXTHDR(&message, ancillary)) {
       if (ancillary->cmsg_level != SOL_SOCKET || ancillary->cmsg_type != SCM_RIGHTS
           || ancillary->cmsg_len < CMSG_LEN(0)) { continue; }
@@ -241,8 +257,7 @@ namespace {
     }
     if (options->wait_timeline) {
       const int fence = wlr_drm_syncobj_timeline_export_sync_file(options->wait_timeline, options->wait_point);
-      pollfd ready{fence, POLLIN, 0};
-      const bool signalled = fence >= 0 && poll(&ready, 1, kTimeoutMs) == 1 && (ready.revents & POLLIN);
+      const bool signalled = fence >= 0 && waitReady(fence, POLLIN);
       if (fence >= 0) { close(fence); }
       if (!signalled) {
         pass->valid = false;
@@ -347,8 +362,7 @@ namespace {
         kLog.warn("cannot export the source producer fence: {}", std::strerror(errno));
         return false;
       }
-      pollfd ready{fence.fd, POLLIN, 0};
-      const bool signalled = poll(&ready, 1, kTimeoutMs) == 1 && (ready.revents & POLLIN);
+      const bool signalled = waitReady(fence.fd, POLLIN);
       close(fence.fd);
       if (!signalled) { kLog.warn("source producer fence did not signal for this copy frame"); return false; }
     }
@@ -368,6 +382,11 @@ namespace umbriel {
     prctl(PR_SET_NAME, "umbriel-copy", 0, 0, 0);
     const pid_t parent = getppid();
     if (prctl(PR_SET_PDEATHSIG, SIGTERM) != 0 || getppid() != parent) { return 1; }
+    // The compositor blocks termination signals for its event loop. Its
+    // private worker must receive the parent-death signal after exec.
+    sigset_t signals;
+    sigemptyset(&signals);
+    if (sigprocmask(SIG_SETMASK, &signals, nullptr) != 0) { return 1; }
     ucred credentials{};
     socklen_t size = sizeof(credentials);
     int type{};

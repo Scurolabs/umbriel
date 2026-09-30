@@ -17,6 +17,9 @@ extern "C" {
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <csignal>
+#include <cerrno>
 
 struct Buffer {
  wlr_buffer base{};
@@ -88,11 +91,31 @@ int main(int argc, char** argv) {
  wlr_render_texture_options rejectedOptions{.texture=texture, .alpha=&alpha};
  wlr_render_pass_add_texture(rejectedPass, &rejectedOptions);
  if (wlr_render_pass_submit(rejectedPass)) return 11;
- auto* pass = wlr_renderer_begin_buffer_pass(renderer, &target->base, nullptr);
- if (!texture || !pass) return 7;
- wlr_render_texture_options options{.texture = texture, .blend_mode = WLR_RENDER_BLEND_MODE_NONE};
- wlr_render_pass_add_texture(pass, &options);
- bool result = wlr_render_pass_submit(pass);
+ // App exits interrupt the compositor's socket waits through SIGCHLD.
+ // Repeated signals exercise that path without touching desktop processes.
+ struct sigaction action{};
+ action.sa_handler = +[](int) {};
+ sigemptyset(&action.sa_mask);
+ if (sigaction(SIGUSR1, &action, nullptr) != 0 || sigaction(SIGCHLD, &action, nullptr) != 0) return 13;
+ const pid_t parent = getpid();
+ const pid_t sender = fork();
+ if (sender < 0) return 13;
+ if (sender == 0) {
+  for (int i = 0; i < 256; ++i) { usleep(500); kill(parent, SIGUSR1); }
+  _exit(0);
+ }
+ bool result = true;
+ for (int i = 0; result && i < 256; ++i) {
+  auto* pass = wlr_renderer_begin_buffer_pass(renderer, &target->base, nullptr);
+  if (!pass) { result = false; break; }
+  wlr_render_texture_options options{.texture = texture, .blend_mode = WLR_RENDER_BLEND_MODE_NONE};
+  wlr_render_pass_add_texture(pass, &options);
+  result = wlr_render_pass_submit(pass);
+ }
+ int senderStatus{};
+ pid_t waited;
+ do { waited = waitpid(sender, &senderStatus, 0); } while (waited < 0 && errno == EINTR);
+ result = result && waited == sender && WIFEXITED(senderStatus) && WEXITSTATUS(senderStatus) == 0;
  printf("GPU copy result: %d\n", result);
  wlr_texture_destroy(texture);
  wlr_renderer_destroy(intelRenderer);
