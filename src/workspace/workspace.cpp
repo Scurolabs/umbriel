@@ -266,7 +266,13 @@ namespace umbriel {
       const bool fs = view->currentFullscreen() || view->scheduledFullscreen();
       view->setSceneParent(fs ? m_group->server()->fullscreenTree() : m_group->server()->xdgTree());
     }
-    View* replacement = m_focusedView == view ? focusReplacementForRemoval(view) : nullptr;
+    const bool focusedHere = m_focusedView == view;
+    View* replacement = focusedHere ? focusReplacementForRemoval(view) : nullptr;
+    if (focusedHere) {
+      // detachFromLayout() judges the survivor once the column is gone, so the note and the new focus land first.
+      noteRemovalOfFocusedColumn(m_layout->columnOf(view));
+      m_focusedView = replacement;
+    }
     detachFromLayout(view);
     if (std::erase(m_views, view) > 0 && m_views.empty()) {
       m_group->server()->scheduleIpcWorkspacesEvent();
@@ -280,9 +286,6 @@ namespace umbriel {
     std::erase(m_floatingStack, view);
     std::erase(m_switchViews, view);
 
-    if (m_focusedView == view) {
-      m_focusedView = replacement;
-    }
     // Re-anchor the strip on whatever is focused now, the way every other focus-moving operation does. Fitting the
     // survivor prevents the old scroll offset from leaving it cut off at the left edge while empty space opens on the
     // right.
@@ -359,6 +362,22 @@ namespace umbriel {
     view->m_ownsNamedScrollingColumnExtent = scrolling != nullptr && name.has_value() && !placement;
     if (placement) {
       scrolling->insertViewIntoColumn(view, static_cast<int>(placement->column), placement->row);
+    } else if (DwindleLayout* dwindle = dwindleLayout(); dwindle != nullptr && m_layoutConfig.dwindle.newTowardCursor) {
+      // The pointer only means something here while it is over this workspace as shown on its output.
+      Server* server = m_group != nullptr ? m_group->server() : nullptr;
+      Output* output = m_group != nullptr ? m_group->output() : nullptr;
+      const Overview* overview = server != nullptr ? server->overview() : nullptr;
+      const Cursor* cursor = server != nullptr ? server->cursor() : nullptr;
+      const wlr_cursor* pointer = cursor != nullptr ? cursor->wlr() : nullptr;
+      if (m_active
+          && output != nullptr
+          && pointer != nullptr
+          && (overview == nullptr || !overview->active())
+          && wlr_output_layout_output_at(server->outputLayout(), pointer->x, pointer->y) == output->wlr()) {
+        dwindle->insertViewToward(view, layoutAttachIndex(view), pointer->x, pointer->y);
+      } else {
+        dwindle->insertView(view, layoutAttachIndex(view));
+      }
     } else {
       m_layout->insertView(view, layoutAttachIndex(view));
     }
@@ -1334,6 +1353,24 @@ namespace umbriel {
     return true;
   }
 
+  bool Workspace::swapFocusedInDirection(bool horizontal, int direction) {
+    // Geometry only: the focus memory directional focus applies could pick a diagonal tile.
+    std::vector<LayoutTarget> targets;
+    for (const Column& column : m_layout->columns()) {
+      for (View* view : column.views) {
+        const wlr_box box = m_layout->targetBox(view);
+        targets.push_back({.view = view, .x = box.x, .y = box.y, .width = box.width, .height = box.height});
+      }
+    }
+    View* target = directionalNeighbor(targets, m_focusedView, horizontal, direction);
+    if (target == nullptr || !m_layout->swapViews(m_focusedView, target)) {
+      return false;
+    }
+    markArrange();
+    ensureFocusedVisible();
+    return true;
+  }
+
   bool Workspace::increaseMasterCount() {
     MasterStackLayout* master = masterLayout();
     if (master == nullptr || !master->promoteFromStack()) {
@@ -1395,7 +1432,25 @@ namespace umbriel {
   }
 
   bool Workspace::moveFocusedColumn(int direction) {
+    // Dwindle has no columns to carry, so a column move is the window move.
+    if (dwindleLayout() != nullptr) {
+      return moveFocusedHorizontal(direction);
+    }
     return scrollingVertical() ? moveWithinLane(direction) : moveLaneAlongStrip(direction);
+  }
+
+  bool Workspace::moveFocusedHorizontal(int direction) {
+    if (DwindleLayout* dwindle = dwindleLayout()) {
+      if (!dwindle->moveView(m_focusedView, true, direction)) {
+        return false;
+      }
+      markArrange();
+      return true;
+    }
+    if (scrollingVertical()) {
+      return moveWithinLane(direction);
+    }
+    return expelFocused(direction) || consumeFocused(direction);
   }
 
   bool Workspace::moveFocusedVertical(int direction) {

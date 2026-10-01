@@ -399,7 +399,8 @@ namespace umbriel {
     void reassertRoleState();
     void setTiledState(uint32_t edges);
     [[nodiscard]] bool shellParentRequested() const;
-    // A window without a parent, fixed size, or dialog-like X11 window type opens tiled.
+    // A window without a parent or dialog-like X11 window type opens tiled unless it has a fixed size and does not
+    // request fullscreen.
     [[nodiscard]] bool looksTiled() const;
     // X11 windows are positioned by the compositor: the X server must know where the window is on screen, because
     // override-redirect menus place themselves relative to it. Deduplicated, so animation frames cost nothing.

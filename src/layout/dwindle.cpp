@@ -433,6 +433,25 @@ namespace umbriel {
     rebuildFlatColumns();
   }
 
+  void DwindleLayout::insertViewToward(View* view, int columnIndex, double cx, double cy) {
+    const int gap = std::clamp(columnIndex, 0, static_cast<int>(m_flatColumns.size()));
+    Node* target = gap > 0 ? nodeAtFlatIndex(gap - 1) : nullptr;
+    if (view == nullptr || findNode(view) != nullptr || target == nullptr || target->areaW <= 0 || target->areaH <= 0) {
+      insertView(view, columnIndex);
+      return;
+    }
+    splitLeafToward(target, view, cx, cy);
+    rebuildFlatColumns();
+  }
+
+  void DwindleLayout::splitLeafToward(Node* target, View* view, double cx, double cy) {
+    // Same rule arrangeNode applies when it resolves the AutoSplit below.
+    const bool horizontal = target->areaW >= target->areaH;
+    const bool newFirst =
+        horizontal ? cx < target->areaX + (target->areaW / 2.0) : cy < target->areaY + (target->areaH / 2.0);
+    splitLeaf(target, view, Node::AutoSplit, newFirst);
+  }
+
   void DwindleLayout::insertViewIntoColumn(View* view, int columnIndex, int /*rowIndex*/) {
     if (view == nullptr || findNode(view) != nullptr) {
       return;
@@ -464,8 +483,65 @@ namespace umbriel {
 
   bool DwindleLayout::expel(View* view, int direction) { return consume(view, direction); }
 
-  bool DwindleLayout::moveViewVertical(View* view, int direction) {
-    return swapLeafViews(findNode(view), findNode(umbriel::directionalNeighbor(m_targets, view, false, direction)));
+  bool DwindleLayout::moveViewVertical(View* view, int direction) { return moveView(view, false, direction); }
+
+  bool DwindleLayout::moveView(View* view, bool horizontal, int direction) {
+    Node* node = findNode(view);
+    if ((direction != -1 && direction != 1) || node == nullptr || node->parent == nullptr) {
+      return false;
+    }
+    const wlr_box content{.x = m_root->areaX, .y = m_root->areaY, .width = m_root->areaW, .height = m_root->areaH};
+    if (content.width <= 0 || content.height <= 0 || node->areaW <= 0 || node->areaH <= 0) {
+      return false;
+    }
+
+    // The first pixel across the gap from the middle of the edge the view leaves through. Outside the content area
+    // there is no tile to enter, and the caller falls back to its output or workspace action.
+    const int gap = m_config->totalGap;
+    double focalX = node->areaX + (node->areaW / 2.0);
+    double focalY = node->areaY + (node->areaH / 2.0);
+    if (horizontal) {
+      focalX = direction < 0 ? node->areaX - gap - 1 : node->areaX + node->areaW + gap;
+    } else {
+      focalY = direction < 0 ? node->areaY - gap - 1 : node->areaY + node->areaH + gap;
+    }
+    if (focalX < content.x
+        || focalX >= content.x + content.width
+        || focalY < content.y
+        || focalY >= content.y + content.height) {
+      return false;
+    }
+
+    // Toward a lone sibling across the parent's own split, the view trades sides with it.
+    Node* parent = node->parent;
+    const bool first = parent->left.get() == node;
+    const Node* sibling = first ? parent->right.get() : parent->left.get();
+    if (parent->type == (horizontal ? Node::HSplit : Node::VSplit)
+        && first == (direction > 0)
+        && sibling != nullptr
+        && sibling->type == Node::Leaf) {
+      std::swap(parent->left, parent->right);
+      parent->ratio = 0.5;
+      arrangeArea(content);
+      return true;
+    }
+
+    // Otherwise the view leaves its split, which hands its area back to its sibling, and splits the tile it enters.
+    detachNode(node);
+    arrangeArea(content);
+    const LayoutTarget* entered = nullptr;
+    double nearest = std::numeric_limits<double>::infinity();
+    for (const LayoutTarget& target : m_targets) {
+      const double dx = std::max({target.x - focalX, 0.0, focalX - (target.x + target.width - 1)});
+      const double dy = std::max({target.y - focalY, 0.0, focalY - (target.y + target.height - 1)});
+      if (const double distance = (dx * dx) + (dy * dy); distance < nearest) {
+        nearest = distance;
+        entered = &target;
+      }
+    }
+    splitLeafToward(findNode(entered->view), view, focalX, focalY);
+    arrangeArea(content);
+    return true;
   }
 
   bool DwindleLayout::swapViews(View* a, View* b) { return swapLeafViews(findNode(a), findNode(b)); }
@@ -495,14 +571,17 @@ namespace umbriel {
   }
 
   void DwindleLayout::arrange(const wlr_box& usable) {
-    m_targets.clear();
     const int edgePad = m_config->edgePad;
-    wlr_box area{
+    arrangeArea({
         .x = usable.x + edgePad,
         .y = usable.y + edgePad,
         .width = std::max(1, usable.width - 2 * edgePad),
         .height = std::max(1, usable.height - 2 * edgePad),
-    };
+    });
+  }
+
+  void DwindleLayout::arrangeArea(const wlr_box& area) {
+    m_targets.clear();
     if (m_root != nullptr) {
       arrangeNode(m_root.get(), area);
     }

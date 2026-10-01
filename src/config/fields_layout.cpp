@@ -159,6 +159,7 @@ namespace umbriel {
       };
       static const Fields<Dwindle> dwindle{
           boolean("preserve_split", &Dwindle::preserveSplit),
+          boolean("new_toward_cursor", &Dwindle::newTowardCursor),
       };
       static const Fields<Master> master{
           choice("position", &Master::position, masterPositions()),

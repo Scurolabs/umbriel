@@ -169,7 +169,12 @@ namespace umbriel {
     bool consumeFocused(int direction);
     bool expelFocused(int direction);
     bool moveFocusedVertical(int direction);
+    // Moves the focused window, not its column, one step left or right: into the neighboring dwindle tile, along a
+    // vertical strip's lane, or out of its column and into the next one.
+    bool moveFocusedHorizontal(int direction);
     bool swapFocusedInCycle(int direction);
+    // Swaps the focused window with its neighbor on screen in that direction.
+    bool swapFocusedInDirection(bool horizontal, int direction);
     bool increaseMasterCount();
     bool decreaseMasterCount();
     bool cycleFocusedWidth(int direction);

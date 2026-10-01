@@ -350,7 +350,7 @@ UMBRIEL_TEST(directionalMoveRefreshesScreenGeometryImmediately) {
   }
 }
 
-UMBRIEL_TEST(verticalMoveCrossesNestedBranches) {
+UMBRIEL_TEST(verticalMoveCrossesNestedBranchesWithoutDisplacingTiles) {
   Fixture fixture;
   for (int i = 0; i < 5; ++i) {
     fixture.layout.insertView(stub(i), i);
@@ -362,15 +362,71 @@ UMBRIEL_TEST(verticalMoveCrossesNestedBranches) {
   CHECK_EQ(upperRight.x, lowerLeft.x);
   CHECK(upperRight.y < lowerLeft.y);
 
+  // No arrange between the moves: a repeated key press must see the geometry the previous move produced.
   CHECK(fixture.layout.moveViewVertical(stub(2), -1));
-  fixture.layout.arrange(kUsable);
+  const wlr_box entered = fixture.layout.targetBox(stub(1));
   CHECK_EQ(fixture.layout.targetBox(stub(2)).y, upperRight.y);
-  CHECK_EQ(fixture.layout.targetBox(stub(1)).y, lowerLeft.y);
+  CHECK_EQ(entered.y, upperRight.y);
+  CHECK(entered.width < upperRight.width);
 
   CHECK(fixture.layout.moveViewVertical(stub(2), 1));
-  fixture.layout.arrange(kUsable);
   CHECK_EQ(fixture.layout.targetBox(stub(2)).y, lowerLeft.y);
-  CHECK_EQ(fixture.layout.targetBox(stub(1)).y, upperRight.y);
+  const wlr_box left = fixture.layout.targetBox(stub(1));
+  CHECK_EQ(left.x, upperRight.x);
+  CHECK_EQ(left.y, upperRight.y);
+  CHECK_EQ(left.width, upperRight.width);
+  CHECK_EQ(left.height, upperRight.height);
+}
+
+UMBRIEL_TEST(horizontalMoveSplitsTheEnteredTileAlongItsLongerEdge) {
+  Fixture fixture;
+  for (int i = 0; i < 3; ++i) {
+    fixture.layout.insertView(stub(i), i);
+    fixture.layout.arrange(kUsable);
+  }
+  const wlr_box left = fixture.layout.targetBox(stub(0));
+  const wlr_box upperRight = fixture.layout.targetBox(stub(1));
+
+  // The tall left tile stacks, and the moved window keeps the lower half it came from.
+  CHECK(fixture.layout.moveView(stub(2), true, -1));
+  const wlr_box top = fixture.layout.targetBox(stub(0));
+  const wlr_box moved = fixture.layout.targetBox(stub(2));
+  CHECK_EQ(top.x, left.x);
+  CHECK_EQ(top.y, left.y);
+  CHECK_EQ(moved.x, left.x);
+  CHECK(moved.y > top.y);
+  const wlr_box right = fixture.layout.targetBox(stub(1));
+  CHECK_EQ(right.y, upperRight.y);
+  CHECK_EQ(right.height, left.height);
+}
+
+UMBRIEL_TEST(moveTowardALoneSiblingTradesSides) {
+  Fixture fixture;
+  fixture.addLeaves(2);
+  fixture.layout.arrange(kUsable);
+  CHECK(fixture.layout.setResizeBoundary(stub(0), WLR_EDGE_RIGHT, 0.7));
+  fixture.layout.arrange(kUsable);
+
+  CHECK(fixture.layout.moveView(stub(0), true, 1));
+  const wlr_box left = fixture.layout.targetBox(stub(1));
+  const wlr_box right = fixture.layout.targetBox(stub(0));
+  CHECK(left.x < right.x);
+  CHECK_EQ(left.y, right.y);
+  CHECK_EQ(left.width, right.width);
+}
+
+UMBRIEL_TEST(moveTowardTheContentEdgeIsRefused) {
+  Fixture fixture;
+  fixture.addLeaves(3);
+  fixture.layout.arrange(kUsable);
+  const wlr_box before = fixture.layout.targetBox(stub(0));
+
+  CHECK(!fixture.layout.moveView(stub(0), true, -1));
+  CHECK(!fixture.layout.moveViewVertical(stub(0), -1));
+  CHECK(!fixture.layout.moveViewVertical(stub(0), 1));
+  CHECK(!fixture.layout.moveView(stub(1), true, 1));
+  CHECK_EQ(fixture.layout.columnOf(stub(0)), 0);
+  CHECK_EQ(fixture.layout.targetBox(stub(0)).width, before.width);
 }
 
 UMBRIEL_TEST(focusPeersSpanTheCrossedSubtree) {
@@ -521,6 +577,28 @@ UMBRIEL_TEST(insertAtGapZeroPlacesViewAtTheFront) {
   fixture.layout.insertView(stub(2), 0);
   CHECK_EQ(fixture.layout.columnOf(stub(2)), 0);
   CHECK_EQ(fixture.layout.columnOf(stub(0)), 1);
+}
+
+UMBRIEL_TEST(insertTowardAPointTakesTheHalfFacingIt) {
+  Fixture fixture;
+  fixture.addLeaves(1);
+  fixture.layout.arrange(kUsable);
+
+  // A landscape leaf splits side by side, so only x picks the side.
+  fixture.layout.insertViewToward(stub(1), 1, 100, 700);
+  fixture.layout.arrange(kUsable);
+  const wlr_box left = fixture.layout.targetBox(stub(1));
+  const wlr_box right = fixture.layout.targetBox(stub(0));
+  CHECK(left.x < right.x);
+  CHECK_EQ(left.y, right.y);
+
+  // The 629x700 right leaf stacks, so only y picks the side.
+  fixture.layout.insertViewToward(stub(2), 2, 1270, 100);
+  fixture.layout.arrange(kUsable);
+  const wlr_box top = fixture.layout.targetBox(stub(2));
+  const wlr_box bottom = fixture.layout.targetBox(stub(0));
+  CHECK_EQ(top.x, right.x);
+  CHECK(top.y < bottom.y);
 }
 
 UMBRIEL_TEST(gapsSeparateSiblings) {

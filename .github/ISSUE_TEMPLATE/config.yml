@@ -2,10 +2,10 @@ blank_issues_enabled: false
 contact_links:
   - name: Umbriel scope
     url: https://github.com/noctalia-dev/umbriel/blob/main/SCOPE.md
-    about: What the project takes on and what it declines. Read this before requesting a feature.
+    about: See which kinds of changes Umbriel is ready to take on.
   - name: Noctalia Discord
     url: https://discord.noctalia.dev
-    about: Support, questions, and idea discussion. Start here if you are unsure whether something is a bug.
+    about: Questions, support, or early feature ideas. Come say hello.
   - name: Umbriel docs
     url: https://docs.noctalia.dev/umbriel/
     about: Configuration reference, keybinds, window rules, and guides.

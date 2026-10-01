@@ -6,7 +6,8 @@
 // OFFSET_GEOMETRY=<px> places the child above and left of the parent and puts the window geometry origin there, so the
 // main surface is inset and its corners are interior to the window; the child then sits below the parent.
 // STALE_GEOMETRY declares the window geometry once, at the first size, while still redrawing both buffers at every
-// configured size.
+// configured size. FIXED_SIZE pins the toplevel's minimum and maximum size to the fallback dimensions, like the size
+// hints Wine gives an X11 game window.
 // Usage: subsurface-client [title [width height [animate]]]. The dimensions are a fallback: a configure adopts it.
 
 #include "xdg-shell-client-protocol.h"
@@ -51,6 +52,7 @@ namespace {
     bool mapped = false;
     bool animateChild = false;
     bool initialFullscreen = false;
+    bool fixedSize = false;
     bool fullscreenBeforeMap = false;
     bool transparentContent = false;
     bool translucentContent = false;
@@ -277,6 +279,7 @@ namespace {
 int main(int argc, char** argv) {
   State state;
   state.initialFullscreen = std::getenv("INITIAL_FULLSCREEN") != nullptr;
+  state.fixedSize = std::getenv("FIXED_SIZE") != nullptr;
   state.fullscreenBeforeMap = std::getenv("FULLSCREEN_BEFORE_MAP") != nullptr;
   state.transparentContent = std::getenv("TRANSPARENT_CONTENT") != nullptr;
   state.translucentContent = std::getenv("TRANSLUCENT_CONTENT") != nullptr;
@@ -329,6 +332,10 @@ int main(int argc, char** argv) {
   }
   wl_subsurface_set_desync(state.subsurface);
 
+  if (state.fixedSize) {
+    xdg_toplevel_set_min_size(state.toplevel, state.width, state.height);
+    xdg_toplevel_set_max_size(state.toplevel, state.width, state.height);
+  }
   if (state.initialFullscreen) {
     // A game window that is already output-sized asks for fullscreen before its first buffer.
     xdg_toplevel_set_fullscreen(state.toplevel, nullptr);

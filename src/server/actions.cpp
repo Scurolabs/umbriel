@@ -833,6 +833,14 @@ namespace umbriel {
       return true;
     }
 
+    template <int Direction>
+    bool actionMoveHorizontal(Server& server, const Keybind& /*bind*/, std::string* /*error*/) {
+      if (Workspace* workspace = windowActionWorkspace(server)) {
+        invalidateHoverFocusAfterSceneChange(server, workspace->moveFocusedHorizontal(Direction));
+      }
+      return true;
+    }
+
     bool actionFocusFirstColumn(Server& server, const Keybind& /*bind*/, std::string* /*error*/) {
       if (Workspace* workspace = windowActionWorkspace(server)) {
         if (View* target = workspace->focusFirstColumn()) {
@@ -1171,6 +1179,14 @@ namespace umbriel {
     template <int Direction> bool actionSwapCycle(Server& server, const Keybind& /*bind*/, std::string* /*error*/) {
       if (Workspace* workspace = windowActionWorkspace(server)) {
         workspace->swapFocusedInCycle(Direction);
+      }
+      return true;
+    }
+
+    template <bool Horizontal, int Direction>
+    bool actionSwapDirectional(Server& server, const Keybind& /*bind*/, std::string* /*error*/) {
+      if (Workspace* workspace = windowActionWorkspace(server)) {
+        workspace->swapFocusedInDirection(Horizontal, Direction);
       }
       return true;
     }
@@ -1937,6 +1953,8 @@ namespace umbriel {
         &actionMoveHorizontalOrOutput<1, WLR_DIRECTION_RIGHT>,
         &actionMoveVertical<-1>,
         &actionMoveVertical<1>,
+        &actionMoveHorizontal<-1>,
+        &actionMoveHorizontal<1>,
         &actionMoveVerticalOrWorkspace<-1>,
         &actionMoveVerticalOrWorkspace<1>,
         &actionMoveVerticalOrOutput<-1, WLR_DIRECTION_UP>,
@@ -2035,6 +2053,10 @@ namespace umbriel {
         &actionFocusCycle<-1>,
         &actionSwapCycle<1>,
         &actionSwapCycle<-1>,
+        &actionSwapDirectional<true, -1>,
+        &actionSwapDirectional<true, 1>,
+        &actionSwapDirectional<false, -1>,
+        &actionSwapDirectional<false, 1>,
         &actionLayoutMasterCountIncrease,
         &actionLayoutMasterCountDecrease,
         &actionSetHeight,

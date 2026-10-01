@@ -346,6 +346,8 @@ namespace {
     case A::ColumnCenter:
     case A::WindowMoveUp:
     case A::WindowMoveDown:
+    case A::WindowMoveLeft:
+    case A::WindowMoveRight:
     case A::WindowMoveOrWorkspaceUp:
     case A::WindowMoveOrWorkspaceDown:
     case A::WindowMoveOrOutputUp:
@@ -384,6 +386,10 @@ namespace {
     case A::ColumnMoveToOutputDown:
     case A::WindowSwapNext:
     case A::WindowSwapPrevious:
+    case A::WindowSwapLeft:
+    case A::WindowSwapRight:
+    case A::WindowSwapUp:
+    case A::WindowSwapDown:
     case A::LayoutMasterCountIncrease:
     case A::LayoutMasterCountDecrease:
       return Group::MoveSize;

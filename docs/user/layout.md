@@ -139,9 +139,11 @@ dropped without extra pointer motion.
 With `center_focused = "on_overflow"`, a column is centered when it and the
 neighbor focus came from cannot share the viewport, and a width change that
 makes them fit puts the pair back side by side at the edge focus came from.
-Closing the focused column runs the same rule with the column that took its
-place. Moving or resizing the focused column does too, as does going fullscreen
-or maximized to edges.
+Closing the focused column or sending it to another workspace runs the same
+rule with the column that took its place. Moving or resizing the focused column
+does too, as does going fullscreen or maximized to edges. A lone column has no
+such pair, so it never centers itself; `center_underfull_strip` decides where it
+rests.
 
 Closing a focused column moves focus to the nearest surviving column. When that
 column contains stacked windows, Umbriel restores its most recently focused
@@ -173,17 +175,37 @@ Dwindle recursively splits tiles into independently sized regions.
 ```toml
 [layout.dwindle]
 preserve_split = false
+new_toward_cursor = false
 ```
 
 | Key | Default | Description |
 | --- | --- | --- |
 | `preserve_split` | `false` | Keep each split direction fixed after creation. |
+| `new_toward_cursor` | `false` | Place a new window on the half of the focused tile nearer the pointer. |
 
 ### Behavior
 
 A new window splits the focused tile along its longer edge. Without
 `preserve_split`, split directions may adapt as geometry changes. Enable it for
 stable, manually shaped regions.
+
+The new window takes the right or bottom half of the split by default. With
+`new_toward_cursor`, it takes the half on the pointer's side of the tile's
+center instead, so the pointer stays over the new window when it was over the
+focused tile. The focused tile is still the one that splits, and the split axis
+does not change. When the pointer is on another output or the overview is
+open, the default applies.
+
+Directional moves (`window-move-left`, `window-move-right`, `window-move-up`,
+`window-move-down`, their `-or-output` and `-or-workspace` variants, and
+`column-move-left` and `column-move-right`, which do the same here) take
+the window out of its tile and split the tile it moves into. That tile splits
+along its longer edge, and the window takes the half nearer where it came
+from. The tile it left goes back to its sibling, so windows it passes through
+only shrink while it is inside them and keep their place in the layout. Moving
+toward a single neighbor that shares its split trades sides with that neighbor.
+To exchange two windows without changing any tile, use the `window-swap-*`
+actions.
 
 Dwindle has no multi-window columns. Moving one into Dwindle places its windows
 as separate tiles.

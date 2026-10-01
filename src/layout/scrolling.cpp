@@ -733,6 +733,9 @@ namespace umbriel {
       return false;
     }
     const int neighbor = focusNeighbor(columnIndex, side);
+    if (neighbor == columnIndex) {
+      return false;
+    }
     // Leading edge of the first column to trailing edge of the second, so the pair's own widths both count.
     const int first = std::min(columnIndex, neighbor);
     const int last = std::max(columnIndex, neighbor);

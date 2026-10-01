@@ -43,10 +43,19 @@ namespace umbriel {
     // Inserts at a gap index: the preceding leaf is split, except gap 0 which splits the first leaf with the new view
     // first.
     void insertView(View* view, int columnIndex) override;
+    // insertView, except the split puts the new view on the half of the split leaf facing (cx, cy) in layout
+    // coordinates, along the axis an AutoSplit of that leaf resolves to. A leaf not yet arranged keeps insertView's
+    // side.
+    void insertViewToward(View* view, int columnIndex, double cx, double cy);
     void insertViewIntoColumn(View* view, int columnIndex, int rowIndex) override;
     bool consume(View* view, int direction) override;
     bool expel(View* view, int direction) override;
     bool moveViewVertical(View* view, int direction) override;
+    // Moves the view out of its tile and into the tile across the edge it leaves through. That tile splits along its
+    // longer edge and the view takes the half nearer where it came from; the split it left collapses, so tiles it
+    // passes through get their area back when it moves on. Toward a lone sibling across the parent's own split, the
+    // two trade sides. False when no tile lies in that direction.
+    bool moveView(View* view, bool horizontal, int direction);
     bool swapViews(View* a, View* b) override;
     void removeView(View* view) override;
     void moveColumn(int from, int to) override;
@@ -101,8 +110,12 @@ namespace umbriel {
     static void setSplitShare(const Split& split, double share);
     bool applyFraction(const std::vector<Split>& splits, double fraction);
     void splitLeaf(Node* node, View* newView, Node::Type split, bool newFirst);
+    // Splits an arranged leaf as an AutoSplit, with the new view on the half facing (cx, cy).
+    void splitLeafToward(Node* target, View* view, double cx, double cy);
     [[nodiscard]] Node* boundaryNode(const View* view, uint32_t edge) const;
     void arrangeNode(Node* node, const wlr_box& area);
+    // Lays the tree out over `area`, the content area arrange() derives from the usable area.
+    void arrangeArea(const wlr_box& area);
     void collectColumns(const Node* node);
     bool swapLeafViews(Node* first, Node* second);
     // Refreshes the flat-column cache. Every operation that changes the tree or reassigns a leaf's view must call this

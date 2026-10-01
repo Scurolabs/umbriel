@@ -226,21 +226,28 @@ namespace umbriel {
     if (openingParented()) {
       return false;
     }
+    if (m_xsurface != nullptr) {
+      if (m_xsurface->modal) {
+        return false;
+      }
+      for (const wlr_xwayland_net_wm_window_type type :
+           {WLR_XWAYLAND_NET_WM_WINDOW_TYPE_DIALOG, WLR_XWAYLAND_NET_WM_WINDOW_TYPE_SPLASH,
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_TOOLBAR, WLR_XWAYLAND_NET_WM_WINDOW_TYPE_UTILITY}) {
+        if (wlr_xwayland_surface_has_window_type(m_xsurface, type)) {
+          return false;
+        }
+      }
+    }
+    // A fullscreen window fills the output whatever its size hints say. Wine pins a game window that does not match
+    // the X monitor to a fixed size, which must not make it a floating dialog.
+    if (requestedFullscreen()) {
+      return true;
+    }
     if (m_toplevel != nullptr) {
       const auto& state = m_toplevel->current;
       const bool fixedWidth = state.max_width > 0 && state.min_width == state.max_width;
       const bool fixedHeight = state.max_height > 0 && state.min_height == state.max_height;
       return !fixedWidth && !fixedHeight;
-    }
-    if (m_xsurface->modal) {
-      return false;
-    }
-    for (const wlr_xwayland_net_wm_window_type type :
-         {WLR_XWAYLAND_NET_WM_WINDOW_TYPE_DIALOG, WLR_XWAYLAND_NET_WM_WINDOW_TYPE_SPLASH,
-          WLR_XWAYLAND_NET_WM_WINDOW_TYPE_TOOLBAR, WLR_XWAYLAND_NET_WM_WINDOW_TYPE_UTILITY}) {
-      if (wlr_xwayland_surface_has_window_type(m_xsurface, type)) {
-        return false;
-      }
     }
     const xcb_size_hints_t* hints = m_xsurface->size_hints;
     if (hints == nullptr

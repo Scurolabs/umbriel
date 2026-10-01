@@ -262,13 +262,13 @@ wait_for_windows_query '
   first(.[] | select(.title == "dwindle-c")) as $c |
   $a.x < $c.x and $b.x == $c.x and $b.y < $c.y
 ' "dwindle setup did not form one left tile and two right tiles"
-"$UMBRIEL" msg column-move-left > /dev/null
+"$UMBRIEL" msg window-swap-left > /dev/null
 wait_for_windows_query '
   first(.[] | select(.title == "dwindle-a")) as $a |
   first(.[] | select(.title == "dwindle-b")) as $b |
   first(.[] | select(.title == "dwindle-c")) as $c |
   $c.x < $a.x and $a.x == $b.x and $b.y < $a.y
-' "dwindle column move did not put c in the left leaf"
+' "dwindle swap did not put c in the left leaf"
 wait_for_stable_geometry > /dev/null
 dwindle_default_width=$(field_of dwindle-c w)
 "$UMBRIEL" msg window-set-primary-extent:0.67 > /dev/null

@@ -72,6 +72,7 @@ namespace umbriel {
     } scrolling;
     struct Dwindle {
       std::optional<bool> preserveSplit;
+      std::optional<bool> newTowardCursor;
       bool operator==(const Dwindle&) const = default;
     } dwindle;
     struct Master {
@@ -120,6 +121,7 @@ namespace umbriel {
     } scrolling;
     struct Dwindle {
       bool preserveSplit = false;
+      bool newTowardCursor = false;
       bool operator==(const Dwindle&) const = default;
     } dwindle;
     struct Master {
@@ -767,6 +769,7 @@ namespace umbriel {
       } scrolling;
       struct Dwindle {
         bool preserveSplit = false;
+        bool newTowardCursor = false;
         bool operator==(const Dwindle&) const = default;
       } dwindle;
       struct Master {

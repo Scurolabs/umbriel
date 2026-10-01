@@ -7,76 +7,41 @@ body:
   - type: markdown
     attributes:
       value: |
-        Bug reports are always welcome, including small ones.
+        Thanks for taking the time to report a problem. Reports are welcome, including small or incomplete ones.
 
-        Please report shell issues (bar, launcher, notifications, widgets) to
-        [noctalia](https://github.com/noctalia-dev/noctalia), and screen sharing or screenshot portal issues to
+        Tell us what you know and leave anything you do not have blank. Steps, logs, screenshots, and system details
+        help us investigate, but we can work from a clear description of what went wrong.
+
+        For bar, launcher, notification, or widget issues, please use
+        [noctalia](https://github.com/noctalia-dev/noctalia). For screen sharing or portal screenshots, please use
         [xdg-desktop-portal-umbriel](https://github.com/noctalia-dev/xdg-desktop-portal-umbriel).
-
-  - type: checkboxes
-    id: submission-checklist
-    attributes:
-      label: Submission checklist
-      description: Please confirm the following before submitting.
-      options:
-        - label: I have searched existing issues and confirmed this is not a duplicate.
-          required: true
-        - label: I am using the latest release or a recent build of `main`.
-          required: true
-        - label: I confirmed this happens in Umbriel itself, not in a desktop shell, a portal backend, or a single application.
-          required: true
-        - label: I checked whether my configuration causes it, for example by reproducing with the packaged `examples/config.toml`.
-          required: true
 
   - type: textarea
     id: description
     attributes:
-      label: Bug description
-      description: A clear and concise description of the issue.
-      placeholder: Describe the problem...
+      label: What happened?
+      description: Describe the problem in your own words.
+      placeholder: I expected ..., but instead ...
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
-      description: |
-        Steps required to reproduce the issue, starting from a fresh session.
-
-        Include the exact keybinds, actions, or `umbriel msg` commands used, and the config snippet if it is needed.
+      label: How can we reproduce it?
+      description: If you know the steps, share them. Include any relevant keybind, command, or configuration snippet.
       placeholder: |
         1. Start a session with ...
         2. Open ...
         3. Press ...
-        4. Observe ...
-    validations:
-      required: true
-
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected behavior
-      description: What did you expect to happen?
-    validations:
-      required: true
-
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual behavior
-      description: What actually happened?
-    validations:
-      required: true
+        4. See ...
 
   - type: input
     id: umbriel-version
     attributes:
       label: Umbriel version
-      description: Paste the output of `umbriel --version`.
+      description: Paste `umbriel --version` if you can.
       placeholder: "umbriel 0.1.0 (c8adc515af29)"
-    validations:
-      required: true
 
   - type: input
     id: regression
@@ -85,38 +50,12 @@ body:
       description: If this used to work, name the last version or commit where it did.
       placeholder: "Optional: v0.1.0, or commit hash"
 
-  - type: dropdown
-    id: session-type
-    attributes:
-      label: Session type
-      description: How was Umbriel running when the issue occurred?
-      options:
-        - Native session (TTY or display manager)
-        - Nested inside a Wayland session
-        - Nested inside an X11 session
-        - Headless
-    validations:
-      required: true
-
-  - type: dropdown
-    id: installation
-    attributes:
-      label: Installation method
-      options:
-        - Source build (just install)
-        - Nix flake (nix build)
-        - NixOS module
-        - Home Manager or hjem module
-        - Distribution package
-        - Other
-    validations:
-      required: true
 
   - type: dropdown
     id: area
     attributes:
       label: Affected area
-      description: Where does the issue show up? Pick the closest match.
+      description: Pick the closest match if you know it.
       options:
         - Layout (scrolling)
         - Layout (dwindle)
@@ -133,15 +72,14 @@ body:
         - IPC or CLI
         - Session lock, clipboard, or screen capture
         - Startup, session, or packaging
+        - I am not sure
         - Other
-    validations:
-      required: true
 
   - type: dropdown
     id: distribution
     attributes:
       label: Distribution
-      description: Select the Linux distribution family where the issue occurs.
+      description: Select the Linux distribution family, if relevant.
       options:
         - Arch-based
         - Fedora-based
@@ -151,52 +89,34 @@ body:
         - openSUSE-based
         - Void
         - Other
-    validations:
-      required: true
 
   - type: textarea
     id: environment
     attributes:
-      label: Environment information
-      description: |
-        Please provide relevant system information.
-
-        If you selected `Other` above, name the exact distribution or installation method here.
-        - GPU and driver: e.g. AMD RX 7800 XT (amdgpu)
-        - wlroots version
-        - Outputs: count, resolution, refresh rate, scale, transform
-        - Kernel version
+      label: System details
+      description: Include anything that might help, such as GPU and driver, wlroots version, outputs, or kernel version.
       placeholder: |
         GPU and driver: AMD RX 7800 XT (amdgpu)
         wlroots: 0.20.2
-        Outputs: DP-1 3840x2160@144 scale 1.5, HDMI-A-1 1920x1080@60 scale 1
+        Outputs: DP-1 3840x2160@144 scale 1.5
         Kernel: 6.17.4
       render: text
-    validations:
-      required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Logs and error output
+      label: Logs, errors, or backtraces
       description: |
-        Paste relevant logs, terminal output, or backtraces.
-
-        Useful sources:
-        - `$XDG_CACHE_HOME/umbriel/umbriel.log` (fallback `~/.cache/umbriel/umbriel.log`)
+        If available, paste relevant output here. Useful sources include:
+        - `$XDG_CACHE_HOME/umbriel/umbriel.log` (or `~/.cache/umbriel/umbriel.log`)
         - `journalctl --user -u umbriel.service -b` for managed systemd sessions
         - Terminal output when running the binary directly
-        - `umbriel outputs`, `umbriel windows`, or `umbriel layers` when the issue involves geometry or focus
-        - A backtrace for crashes, ideally from a debug build
 
-        Large outputs can be wrapped in a `<details>` block or attached as a file.
+        Large outputs can be attached as a file.
       render: text
 
   - type: textarea
     id: additional
     attributes:
-      label: Additional context
-      description: |
-        Add screenshots, screen recordings, config snippets, or any other relevant information here.
-
-        Visual, layout, and animation issues are much easier to fix with a recording.
+      label: Anything else?
+      description: Screenshots, recordings, configuration snippets, and any other context are welcome.

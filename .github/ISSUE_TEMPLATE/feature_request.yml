@@ -7,65 +7,57 @@ body:
   - type: markdown
     attributes:
       value: |
-        Umbriel is young, and it stays usable by staying small. Please read
-        [SCOPE.md](https://github.com/noctalia-dev/umbriel/blob/main/SCOPE.md) before filling this in: it lists what
-        the project takes on, what it declines, and the four questions every request is judged by.
+        Thanks for sharing an idea. You do not need to arrive with a complete design: explaining the problem you run
+        into is the most useful place to start.
 
-        Short version. No new tiling layouts, no new layout paradigms, no desktop shell components, no plugin system.
-        Sharpening what already exists is welcome.
+        Umbriel focuses on improving the compositor features it already has. It is not currently adding tiling layouts,
+        desktop shell components, or plugins. The [scope guide](https://github.com/noctalia-dev/umbriel/blob/main/SCOPE.md)
+        explains those boundaries in more detail.
 
-        If you are not sure whether an idea fits, ask on [Discord](https://discord.noctalia.dev) first. That is
-        faster than an issue and costs you nothing if the answer is no.
-
-  - type: checkboxes
-    id: scope-checklist
-    attributes:
-      label: Scope checklist
-      description: Please confirm all of the following.
-      options:
-        - label: I read SCOPE.md and this request is not in the out of scope list.
-          required: true
-        - label: I am not requesting a new tiling layout or a new layout paradigm.
-          required: true
-        - label: I checked the [documentation](https://docs.noctalia.dev/umbriel/) and `examples/config.toml`, and this is not already possible with configuration, window or layer rules, keybinds, submaps, or `umbriel msg`.
-          required: true
-        - label: This needs the compositor. A desktop shell, an ordinary client, or a script over `umbriel msg` cannot do it.
-          required: true
-        - label: I have searched existing issues and pull requests for the same request.
-          required: true
-        - label: I understand this can be closed as out of scope, and that this is a decision about the project, not about the idea.
-          required: true
+        Not sure whether an idea fits? Ask in [Discord](https://discord.noctalia.dev). Early discussion is welcome, and
+        a scope decision is about the project's focus, not the value of your idea.
 
   - type: textarea
     id: problem
     attributes:
-      label: Problem
-      description: |
-        What can you not do today? Describe the situation you hit, not the feature you want.
-
-        A request without a problem behind it is very likely to be closed.
-      placeholder: |
-        When I ..., Umbriel ..., so I end up ...
+      label: What problem would this solve?
+      description: Describe the situation you run into and how it affects you.
+      placeholder: When I ..., Umbriel ..., so I end up ...
     validations:
       required: true
 
   - type: textarea
-    id: attempts
+    id: outcome
     attributes:
-      label: What you already tried
-      description: |
-        Which config keys, window or layer rules, keybinds, submaps, or `umbriel msg` actions did you try, and how did
-        they fall short?
-      placeholder: |
-        Tried `layout.gap` and a window rule for ..., but ...
+      label: What would a better experience look like?
+      description: Describe the result you hope for. A concrete implementation is optional.
+      placeholder: It would help if I could ...
     validations:
       required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Possible approach
+      description: If you have an idea for how it could work, share it here. Configuration sketches, actions, and
+        mockups are all useful, but none are required.
+      placeholder: |
+        Perhaps Umbriel could ...
+
+  - type: textarea
+    id: attempts
+    attributes:
+      label: What have you tried?
+      description: Tell us about relevant configuration, window or layer rules, keybinds, submaps, or `umbriel msg`
+        actions you have already explored.
+      placeholder: |
+        I tried ..., but ...
 
   - type: dropdown
     id: area
     attributes:
       label: Area
-      description: Which part of Umbriel would change?
+      description: Which part of Umbriel seems most relevant?
       options:
         - Existing layout behavior (scrolling, dwindle, master)
         - Floating, pinned, or fullscreen windows
@@ -81,63 +73,24 @@ body:
         - Xwayland
         - Packaging or session integration
         - Documentation
-    validations:
-      required: true
+        - I am not sure
 
   - type: textarea
-    id: proposal
+    id: references
     attributes:
-      label: Proposed behavior
-      description: |
-        What should Umbriel do instead? Be concrete: name the config keys, action names, defaults, and edge cases you
-        have in mind, and say what stays unchanged for everyone who does not use it.
-      placeholder: |
-        Add ... under `[...]`, defaulting to ...
-        Existing behavior is unchanged when the key is absent.
-    validations:
-      required: true
-
-  - type: textarea
-    id: scope-fit
-    attributes:
-      label: Scope fit
-      description: |
-        Answer for your request:
-
-        - Why does this belong in the compositor rather than in a shell, a client, or a script?
-        - Does it extend something Umbriel already does, or does it open a new front?
-        - Does it fall out of wlroots and umbrielfx, or does it need new machinery or a new dependency?
-        - What is the smallest version of it that solves your problem?
-      placeholder: |
-        Belongs in the compositor because ...
-        Extends the existing ... path.
-        Uses ... from wlroots, no new dependency.
-        Smallest useful version: ...
-    validations:
-      required: true
-
-  - type: textarea
-    id: prior-art
-    attributes:
-      label: Prior art and references
-      description: |
-        Links to protocol specs, wlroots or umbrielfx APIs, related issues, mockups, or how other compositors handle it.
-
-        "Project X has this" is context, not a reason. Keep the problem above as the reason.
-      placeholder: |
-        https://wayland.app/protocols/...
-        https://github.com/...
+      label: Examples or references
+      description: Links, screenshots, recordings, or related discussions can help explain the request.
 
   - type: checkboxes
     id: participation
     attributes:
-      label: Participation
+      label: How would you like to help?
       options:
-        - label: I am willing to implement this myself, after the scope is agreed.
         - label: I can test an implementation in my own session.
+        - label: I might be interested in implementing this after we discuss the scope.
 
   - type: textarea
     id: additional
     attributes:
-      label: Additional context
-      description: "Anything else worth knowing: screenshots, recordings, config sketches, or constraints."
+      label: Anything else?
+      description: Add any context, constraints, or questions that would help the conversation.

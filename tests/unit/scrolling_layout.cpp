@@ -1088,6 +1088,46 @@ UMBRIEL_TEST(onOverflowJudgesTheSurvivorOfAClosedColumnAgainstItsReplacement) {
   CHECK(fixture.layout.centeredRest());
 }
 
+// Removing the focused column can leave a lone survivor, which has no pair left to overflow against. It rests at the
+// strip start, so center_underfull_strip alone decides whether it ends up centered or flush left.
+UMBRIEL_TEST(onOverflowRestsTheLoneSurvivorOfARemovedColumnAtTheStripStart) {
+  for (const bool centerUnderfullStrip : {false, true}) {
+    Fixture fixture;
+    fixture.config.scrolling.centerFocused = CenterFocusedColumn::OnOverflow;
+    fixture.config.scrolling.centerUnderfullStrip = centerUnderfullStrip;
+    fixture.addColumns(2);
+    for (int column = 0; column < 2; ++column) {
+      CHECK(fixture.layout.setWidthFromPixels(column, kViewport, 700));
+    }
+
+    // 700 + gap + 700 overruns the 1260 viewport, so focusing column 0 from column 1 centers it.
+    fixture.layout.activateColumn(1, kViewport);
+    fixture.layout.activateColumn(0, kViewport);
+    CHECK_EQ(fixture.layout.scroll(), -280.0);
+    CHECK(fixture.layout.centeredRest());
+
+    fixture.layout.noteRemovalOfFocusedColumn(0);
+    fixture.layout.removeView(stub(0));
+    fixture.layout.reevaluateAfterRemoval(0, kViewport);
+    CHECK_EQ(fixture.layout.scroll(), 0.0);
+    CHECK(!fixture.layout.centeredRest());
+    CHECK_EQ(fixture.layout.columnX(0, kViewport), centerUnderfullStrip ? 280 : 0);
+  }
+}
+
+// on_overflow centers a column because it and the one it came from cannot share the viewport. A lone column has no such
+// pair, so even a fullscreen one is not a centered rest.
+UMBRIEL_TEST(onOverflowJudgesNoPairForALoneColumn) {
+  Fixture fixture;
+  fixture.config.scrolling.centerFocused = CenterFocusedColumn::OnOverflow;
+  fixture.addColumns(1);
+  fixture.layout.setConstraints([](const View*) { return LayoutConstraints{.fullscreen = true}; });
+
+  fixture.layout.reevaluateColumn(0, kViewport);
+  CHECK_EQ(fixture.layout.scroll(), static_cast<double>(fixture.config.edgePad));
+  CHECK(!fixture.layout.centeredRest());
+}
+
 // When the last tiled column closes and focus passes to a floating window, no survivor is judged. A later close of an
 // unfocused column must not replay that judgment on whatever column is focused by then.
 UMBRIEL_TEST(onOverflowForgetsAClosedColumnWithNoTiledSurvivor) {

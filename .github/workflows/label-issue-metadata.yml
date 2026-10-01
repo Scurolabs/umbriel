@@ -12,7 +12,7 @@ jobs:
   label-issue-metadata:
     runs-on: ubuntu-latest
     steps:
-      - name: Apply distribution and session labels from issue form
+      - name: Apply distribution labels from issue form
         uses: actions/github-script@v7
         with:
           script: |
@@ -28,7 +28,6 @@ jobs:
             };
 
             const distributionValue = extractValue("Distribution");
-            const sessionValue = extractValue("Session type");
 
             const distributionLabelMap = {
               "Arch-based": "arch-based",
@@ -41,15 +40,7 @@ jobs:
               "Other": "distro:other"
             };
 
-            const sessionLabelMap = {
-              "Native session (TTY or display manager)": "session:native",
-              "Nested inside a Wayland session": "session:nested-wayland",
-              "Nested inside an X11 session": "session:nested-x11",
-              "Headless": "session:headless"
-            };
-
             const distributionLabels = new Set(Object.values(distributionLabelMap));
-            const sessionLabels = new Set(Object.values(sessionLabelMap));
 
             const mappings = [
               {
@@ -58,13 +49,6 @@ jobs:
                 labelMap: distributionLabelMap,
                 managedLabels: distributionLabels,
                 description: "Issue reported for this Linux distribution family"
-              },
-              {
-                kind: "session",
-                selectedValue: sessionValue,
-                labelMap: sessionLabelMap,
-                managedLabels: sessionLabels,
-                description: "Issue reported for this Umbriel session type"
               }
             ];
 
