@@ -242,8 +242,9 @@ namespace umbriel {
       return;
     }
     wlr_scene_node_set_enabled(&card.tree->node, true);
-    // A tiled opener waiting for the arrange that places it is not showing yet. Its card follows.
-    if (view->tiledOpeningDeferred()) {
+    // A tiled opener waiting for the arrange that places it is not showing yet, and a hidden tab shares its box with
+    // the tab on show. Their cards follow.
+    if (view->presentationSuppressed()) {
       card.blur.hide();
       wlr_scene_node_set_enabled(&card.tree->node, false);
       syncCardEffects(card);

@@ -598,7 +598,9 @@ namespace umbriel {
     m_setGamma.notify = onSetGamma;
     wl_signal_add(&m_gammaManager->events.set_gamma, &m_setGamma);
 
-    m_xdgShell = wlr_xdg_shell_create(m_display, 3);
+    // Version 6 adds the suspended state hidden tabs are given. The window-manager capabilities version 5 sends default
+    // to every capability, which is what a client assumed before, so no client sees a change in what it may ask for.
+    m_xdgShell = wlr_xdg_shell_create(m_display, 6);
     m_newXdgToplevel.notify = onNewXdgToplevel;
     wl_signal_add(&m_xdgShell->events.new_toplevel, &m_newXdgToplevel);
     m_newXdgPopup.notify = onNewXdgPopup;

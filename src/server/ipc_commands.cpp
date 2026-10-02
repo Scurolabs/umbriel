@@ -64,9 +64,12 @@ namespace umbriel {
             "{}{}{}\t{}\t[{} {}x{}{:+}{:+}]{}{}{}",
             entry.value("focused", false) ? "*" : (entry.value("urgent", false) ? "!" : " "),
             entry.value("xwayland", false) ? "[Xwayland] " : "", appId.empty() ? "-" : appId,
-            title.empty() ? "-" : title, entry.value("floating", false) ? "float" : "tile", entry.value("w", 0),
-            entry.value("h", 0), entry.value("x", 0), entry.value("y", 0), xdgTagSuffix, contentTypeSuffix,
-            scratchpadSuffix
+            title.empty() ? "-" : title,
+            entry.value("floating", false)     ? "float"
+                : entry.value("tabbed", false) ? "tab"
+                                               : "tile",
+            entry.value("w", 0), entry.value("h", 0), entry.value("x", 0), entry.value("y", 0), xdgTagSuffix,
+            contentTypeSuffix, scratchpadSuffix
         );
       }
     }
@@ -434,6 +437,20 @@ namespace umbriel {
       entry["xdg_tag"] = v->xdgTag().value_or("");
       entry["content_type"] = contentTypeName(v->contentType());
       entry["floating"] = v->floating();
+      // Membership of a tab group, the tab's place among its tabs, and whether the group shows another tab.
+      int tabIndex = -1;
+      if (const Workspace* home = v->workspace()) {
+        const Layout& layout = home->layout();
+        const int column = layout.columnOf(v.get());
+        const TabGroup* group =
+            column >= 0 ? tabGroupOf(layout.columns()[static_cast<size_t>(column)], v.get()) : nullptr;
+        if (group != nullptr) {
+          tabIndex = layout.rowOf(v.get()) - static_cast<int>(group->first);
+        }
+      }
+      entry["tabbed"] = tabIndex >= 0;
+      entry["tab_index"] = tabIndex;
+      entry["tab_hidden"] = v->tabHidden();
       entry["border_effect"] = effectSlotJson(v->effectSlot(EffectKind::Border), true);
       entry["window_effect"] = effectSlotJson(v->effectSlot(EffectKind::Window));
       // Workspace-local remembered focus. Seat-global activation is reported

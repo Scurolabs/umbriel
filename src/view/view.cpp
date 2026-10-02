@@ -317,6 +317,8 @@ namespace umbriel {
       m_captureScene = nullptr;
     }
     if (m_sceneTree != nullptr) {
+      // The attachment's nodes hang under the frame: release them first so their owner never destroys a freed node.
+      m_chromeAttachment.reset();
       m_decoration.poolShadow(m_sceneTree, nullptr, 0, 0, false);
       wlr_scene_node_destroy(&m_sceneTree->node);
       m_sceneTree = nullptr;
@@ -542,12 +544,12 @@ namespace umbriel {
       return;
     }
     m_onActiveWorkspace = active;
+    // A hidden tab stays hidden when its workspace comes back.
+    const bool shown = active && !m_tabHidden;
     if (m_sceneTree != nullptr) {
-      wlr_scene_node_set_enabled(&m_sceneTree->node, active);
-      m_decoration.setShadowEnabled(active);
-    } else {
-      m_decoration.setShadowEnabled(active);
+      wlr_scene_node_set_enabled(&m_sceneTree->node, shown);
     }
+    m_decoration.setShadowEnabled(shown);
     if (!m_mapped) {
       return;
     }
@@ -569,8 +571,26 @@ namespace umbriel {
     }
   }
 
+  void View::setTabHidden(bool hidden) {
+    if (m_tabHidden == hidden) {
+      return;
+    }
+    m_tabHidden = hidden;
+    // A client that honours it stops rendering while its tab is hidden; the background frame timer still keeps one that
+    // does not alive.
+    setSuspendedState(hidden);
+    if (m_sceneTree != nullptr) {
+      // A revealed tab shows exactly when its workspace does.
+      setNodeEnabled(!hidden && m_mapped && m_onActiveWorkspace);
+    }
+    if (Overview* overview = m_server->overview(); overview != nullptr && overview->active()) {
+      overview->onViewPresentationChanged(this);
+    }
+    m_server->scheduleIpcWindowsEvent();
+  }
+
   void View::setNodeEnabled(bool enabled) {
-    enabled = enabled && !m_tiledOpeningDeferred;
+    enabled = enabled && !presentationSuppressed();
     wlr_scene_node_set_enabled(&m_sceneTree->node, enabled);
     m_decoration.setShadowEnabled(enabled);
     m_server->updateIdleInhibit();
@@ -844,6 +864,8 @@ namespace umbriel {
     }
     forEachSurface(&Output::notifySurfaceScaleIter, output);
     forEachPopupSurface(&Output::notifySurfaceScaleIter, output);
+    // Chrome that renders text follows the scale too.
+    layoutChromeAttachment(m_chromeContentWidth, m_chromeContentHeight);
   }
 
   void View::unconstrainPopup(wlr_xdg_popup* popup) {

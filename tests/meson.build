@@ -35,6 +35,7 @@ unit_tests = [
   ['scrolling-layout', ['unit/scrolling_layout.cpp'], []],
   ['dwindle-layout', ['unit/dwindle_layout.cpp'], []],
   ['master-layout', ['unit/master_layout.cpp'], []],
+  ['tabbed-layout', ['unit/tabbed_layout.cpp'], []],
   ['cheatsheet-rows', ['unit/cheatsheet_rows.cpp'], []],
   ['shortcut-labels', ['unit/shortcut_labels.cpp'], []],
   ['border-ring', ['unit/border_ring.cpp'], []],

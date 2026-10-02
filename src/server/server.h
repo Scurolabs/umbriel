@@ -414,6 +414,7 @@ namespace umbriel {
     void removeOutput(Output* output);
     void reassignOutputViews(Output* source, Output* destination);
     void scheduleDisplacedViewRestore();
+    void rememberKeyboardInputSource(Keyboard& keyboard);
     void removeKeyboard(Keyboard* keyboard);
     void removeView(View* view);
     void removeLayerSurface(LayerSurface* layerSurface, wlr_output* output);
@@ -873,6 +874,7 @@ namespace umbriel {
     std::vector<std::unique_ptr<ShortcutsInhibitorWatch>> m_shortcutsInhibitors;
     SurfaceLayoutMemory m_surfaceLayouts;
     Keyboard* m_keyboardLayoutSource = nullptr;
+    Keyboard* m_keyboardInputSource = nullptr;
     ModifierTapState m_modifierTap;
     std::vector<std::unique_ptr<PointerDevice>> m_pointers;
     std::vector<std::unique_ptr<TouchDevice>> m_touchDevices;
